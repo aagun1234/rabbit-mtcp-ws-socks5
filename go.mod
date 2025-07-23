@@ -1,4 +1,4 @@
-module github.com/aagun1234/rabbit-mtcp-ws
+module github.com/aagun1234/rabbit-mtcp-ws-socks5
 
 go 1.23
 
