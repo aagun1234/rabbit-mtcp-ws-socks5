@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/aagun1234/rabbit-mtcp-ws/block"
-	"github.com/aagun1234/rabbit-mtcp-ws/logger"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/block"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/logger"
 	"go.uber.org/atomic"
 )
 
@@ -86,7 +86,6 @@ func (x *blockProcessor) packData(data []byte, connectionID uint32) []block.Bloc
 	return block.NewDataBlocks(connectionID, &x.sendBlockID, data)
 }
 
-
 func (x *blockProcessor) packConnect(address string, connectionID uint32) block.Block {
 	return block.NewConnectBlock(connectionID, x.sendBlockID.Inc()-1, address)
 }
@@ -94,7 +93,6 @@ func (x *blockProcessor) packConnect(address string, connectionID uint32) block.
 func (x *blockProcessor) packDisconnect(connectionID uint32, shutdownType uint8) block.Block {
 	return block.NewDisconnectBlock(connectionID, x.sendBlockID.Inc()-1, shutdownType)
 }
-
 
 func (x *blockProcessor) packPing(connectionID uint32, latency uint64) block.Block {
 	return block.NewPingBlock(connectionID, 0, latency)

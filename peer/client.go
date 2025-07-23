@@ -2,18 +2,19 @@ package peer
 
 import (
 	"context"
-	"github.com/aagun1234/rabbit-mtcp-ws/connection"
-	"github.com/aagun1234/rabbit-mtcp-ws/connection_pool"
-	"github.com/aagun1234/rabbit-mtcp-ws/tunnel"
-	"github.com/aagun1234/rabbit-mtcp-ws/tunnel_pool"
 	"math/rand"
+
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/connection"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/connection_pool"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/tunnel"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/tunnel_pool"
 )
 
 type ClientPeer struct {
 	Peer
 }
 
-func NewClientPeer(tunnelNum int, endpoints []string, cipher tunnel.Cipher, authkey string, insecure bool,retryfailed bool) ClientPeer {
+func NewClientPeer(tunnelNum int, endpoints []string, cipher tunnel.Cipher, authkey string, insecure bool, retryfailed bool) ClientPeer {
 	if initRand() != nil {
 		panic("Error when initialize random seed.")
 	}
@@ -21,7 +22,7 @@ func NewClientPeer(tunnelNum int, endpoints []string, cipher tunnel.Cipher, auth
 	return newClientPeerWithID(peerID, tunnelNum, endpoints, cipher, authkey, insecure, retryfailed)
 }
 
-func newClientPeerWithID(peerID uint32, tunnelNum int, endpoints []string, cipher tunnel.Cipher, authkey string, insecure bool,retryfailed bool) ClientPeer {
+func newClientPeerWithID(peerID uint32, tunnelNum int, endpoints []string, cipher tunnel.Cipher, authkey string, insecure bool, retryfailed bool) ClientPeer {
 	peerCtx, removePeerFunc := context.WithCancel(context.Background())
 
 	poolManager := tunnel_pool.NewClientManager(tunnelNum, endpoints, peerID, cipher, authkey, insecure, retryfailed)
@@ -35,7 +36,6 @@ func newClientPeerWithID(peerID uint32, tunnelNum int, endpoints []string, ciphe
 			tunnelPool:     *tunnelPool,
 			ctx:            peerCtx,
 			cancel:         removePeerFunc,
-			
 		},
 	}
 }

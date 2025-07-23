@@ -2,9 +2,10 @@ package tunnel_pool
 
 import (
 	"context"
-	"github.com/aagun1234/rabbit-mtcp-ws/block"
-	"github.com/aagun1234/rabbit-mtcp-ws/logger"
 	"sync"
+
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/block"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/logger"
 )
 
 type TunnelPool struct {
@@ -35,7 +36,7 @@ func NewTunnelPool(peerID uint32, manager Manager, peerContext context.Context) 
 	}
 	tp.logger.InfoAf("Tunnel Pool of peer %d created.\n", peerID)
 	go manager.DecreaseNotify(tp)
-	
+
 	return tp
 }
 

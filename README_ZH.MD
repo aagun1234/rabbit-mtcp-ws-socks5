@@ -8,11 +8,11 @@ forked from ihciah/rabbit-tcp
 
 在websocket上增加ping-pong，保持连接状态，测量延时，可能的话以后考虑基于延时加权的多链路负载均衡
 
-![rabbit-websocket](https://github.com/aagun1234/rabbit-mtcp-ws/blob/main/20250717.png)
+![rabbit-websocket](https://github.com/aagun1234/rabbit-mtcp-ws-socks5/blob/main/20250717.png)
 
 但实测websocket连接性能低于TCP连接
 
-![Speed-rabbit-websocket](https://github.com/aagun1234/rabbit-mtcp-ws/blob/main/test.jpg)
+![Speed-rabbit-websocket](https://github.com/aagun1234/rabbit-mtcp-ws-socks5/blob/main/test.jpg)
 
 # Rabbit TCP
 

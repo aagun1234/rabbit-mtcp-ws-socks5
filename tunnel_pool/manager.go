@@ -2,21 +2,22 @@ package tunnel_pool
 
 import (
 	"context"
-	"github.com/aagun1234/rabbit-mtcp-ws/logger"
-	"github.com/aagun1234/rabbit-mtcp-ws/tunnel"
-	
-	"go.uber.org/atomic"
+
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/logger"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/tunnel"
+
 	"crypto/tls"
-	"fmt"
-	"os"
 	"crypto/x509"
-	"strings"
+	"fmt"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
-	"github.com/gorilla/websocket"
-)
 
+	"github.com/gorilla/websocket"
+	"go.uber.org/atomic"
+)
 
 type Manager interface {
 	Notify(pool *TunnelPool)         // When TunnelPool size changed, Notify should be called
@@ -35,25 +36,26 @@ type ClientManager struct {
 	retryFailed        bool
 }
 type ClientCFG struct {
-	tunnelNum          int
-	endpoints          []string
-	authkey            string
-	insecure           bool
-	retryFailed        bool
+	tunnelNum   int
+	endpoints   []string
+	authkey     string
+	insecure    bool
+	retryFailed bool
 }
 
 func NewClientManager(tunnelNum int, endpoints []string, peerID uint32, cipher tunnel.Cipher, authkey string, insecure bool, retryfailed bool) ClientManager {
 	return ClientManager{
-		tunnelNum: tunnelNum,
-		endpoints:  endpoints,
-		cipher:    cipher,
-		peerID:    peerID,
-		logger:    logger.NewLogger("[ClientManager]"),
-		authkey:   authkey,
-		insecure:  insecure,
+		tunnelNum:   tunnelNum,
+		endpoints:   endpoints,
+		cipher:      cipher,
+		peerID:      peerID,
+		logger:      logger.NewLogger("[ClientManager]"),
+		authkey:     authkey,
+		insecure:    insecure,
 		retryFailed: retryfailed,
 	}
 }
+
 // TLSConfigFromFiles 从文件加载 TLS 配置
 func TLSConfigFromFiles(certFile, keyFile, caFile string, insecureSkipVerify bool) (*tls.Config, error) {
 	var tlsConfig tls.Config
@@ -76,8 +78,8 @@ func TLSConfigFromFiles(certFile, keyFile, caFile string, insecureSkipVerify boo
 		if !caCertPool.AppendCertsFromPEM(caCert) {
 			return nil, fmt.Errorf("failed to append CA certificate to pool")
 		}
-		tlsConfig.RootCAs = caCertPool // For client to verify server
-		tlsConfig.ClientCAs = caCertPool // For server to verify client (mutual TLS)
+		tlsConfig.RootCAs = caCertPool                     // For client to verify server
+		tlsConfig.ClientCAs = caCertPool                   // For server to verify client (mutual TLS)
 		tlsConfig.ClientAuth = tls.VerifyClientCertIfGiven // Or tls.RequireAndVerifyClientCert
 	}
 
@@ -91,86 +93,85 @@ func (cm *ClientManager) DecreaseNotify(pool *TunnelPool) {
 	cm.decreaseNotifyLock.Lock()
 	defer cm.decreaseNotifyLock.Unlock()
 	tunnelCount := len(pool.tunnelMapping)
-	lastfailed:=""
+	lastfailed := ""
 	retryweight := make(map[string]int, len(cm.endpoints))
 	for tunnelToCreate := cm.tunnelNum - tunnelCount; tunnelToCreate > 0; {
-		
+
 		select {
 		case <-pool.ctx.Done():
 			// Have to return if pool cancel is called.
 			return
 		default:
 		}
-		endpoint:=""
-		curindex:=0
-		if len(cm.endpoints) >0 {
-			curindex=(tunnelToCreate-1)%len(cm.endpoints)
-			endpoint=cm.endpoints[curindex]
+		endpoint := ""
+		curindex := 0
+		if len(cm.endpoints) > 0 {
+			curindex = (tunnelToCreate - 1) % len(cm.endpoints)
+			endpoint = cm.endpoints[curindex]
 		} else {
-			endpoint=""
-			curindex=0
+			endpoint = ""
+			curindex = 0
 		}
-		if endpoint!="" {
-			cm.logger.Debugf("Need %d new tunnels to %s now.\n", tunnelToCreate,endpoint)
+		if endpoint != "" {
+			cm.logger.Debugf("Need %d new tunnels to %s now.\n", tunnelToCreate, endpoint)
 			dialTimeout := time.Duration(DialTimeoutSec) * time.Second
 			//conn, err := net.DialTimeout("tcp", endpoint, dialTimeout)
 			dialer := &websocket.Dialer{
 				HandshakeTimeout: dialTimeout,
 			}
-			if !strings.Contains(endpoint, "wss://") && !strings.Contains(endpoint, "ws://")  {
+			if !strings.Contains(endpoint, "wss://") && !strings.Contains(endpoint, "ws://") {
 				endpoint = "ws://" + endpoint
 			}
 			if strings.Contains(endpoint, "wss://") {
 				tlsConfig, err := TLSConfigFromFiles("", "", "", cm.insecure)
 				if err != nil {
 					cm.logger.Errorf("failed to create client TLS config: %w", err)
-					return 
+					return
 				}
 				dialer.TLSClientConfig = tlsConfig
 				//dialer.TLSClientConfig = &tls.Config{
-					//InsecureSkipVerify: true, // WARNING: Only for testing with self-signed certs!
+				//InsecureSkipVerify: true, // WARNING: Only for testing with self-signed certs!
 				//}
 			}
 			requestHeader := http.Header{}
-			if cm.authkey!="" {
-			    requestHeader.Add("Authorization", "Bearer "+cm.authkey)
-			    cm.logger.Debugf("Dial with Auth Header: %v",requestHeader)
+			if cm.authkey != "" {
+				requestHeader.Add("Authorization", "Bearer "+cm.authkey)
+				cm.logger.Debugf("Dial with Auth Header: %v", requestHeader)
 			}
-			conn, _, err := dialer.Dial(endpoint,  requestHeader)
-			
-			
+			conn, _, err := dialer.Dial(endpoint, requestHeader)
+
 			//conn, err := net.Dial("tcp", endpoint) //cm.endpoint)
 			if err != nil {
 				cm.logger.Errorf("Error when dial to %s: %v.\n", endpoint, err)
-				
+
 				if cm.retryFailed {
-					if retryweight[endpoint]<5 {
+					if retryweight[endpoint] < 5 {
 						retryweight[endpoint]++
 					}
 				} else {
-					if lastfailed==endpoint {// if second time fail to endpoint
-						if curindex == (len(cm.endpoints)-1) { // move last endpoint to first
-							cm.endpoints[curindex]=cm.endpoints[0]
+					if lastfailed == endpoint { // if second time fail to endpoint
+						if curindex == (len(cm.endpoints) - 1) { // move last endpoint to first
+							cm.endpoints[curindex] = cm.endpoints[0]
 							cm.endpoints[0] = endpoint
-						} else { 
-						// going to reconnect to last success endpoint, move current failed endpoint to an older position
-							cm.endpoints[curindex]=cm.endpoints[curindex+1]
-							cm.endpoints[curindex+1]=endpoint
+						} else {
+							// going to reconnect to last success endpoint, move current failed endpoint to an older position
+							cm.endpoints[curindex] = cm.endpoints[curindex+1]
+							cm.endpoints[curindex+1] = endpoint
 						}
 						cm.logger.Errorf(" %s moved to last.\n", endpoint)
 					}
-					retryweight[endpoint]=1
+					retryweight[endpoint] = 1
 				}
-				time.Sleep(time.Duration(retryweight[endpoint] * ErrorWaitSec) * time.Second)
-				lastfailed=endpoint
+				time.Sleep(time.Duration(retryweight[endpoint]*ErrorWaitSec) * time.Second)
+				lastfailed = endpoint
 				continue
-				
+
 			}
-			if lastfailed==endpoint { //last failed successed, reset
-				lastfailed="" 
-				retryweight[endpoint]=0
+			if lastfailed == endpoint { //last failed successed, reset
+				lastfailed = ""
+				retryweight[endpoint] = 0
 			}
-			tun, err := NewActiveTunnel(conn, cm.cipher, cm.peerID)//创建一个tunnel并交换ID（握手）
+			tun, err := NewActiveTunnel(conn, cm.cipher, cm.peerID) //创建一个tunnel并交换ID（握手）
 			if err != nil {
 				cm.logger.Errorf("Error when create active tunnel: %v\n", err)
 				time.Sleep(time.Duration(ErrorWaitSec) * time.Second)
@@ -178,7 +179,7 @@ func (cm *ClientManager) DecreaseNotify(pool *TunnelPool) {
 			}
 			cm.logger.Debugf("ClientManager DecreaseNotify Set ReadDeadLine unlimit.\n")
 			conn.SetReadDeadline(time.Time{})
-			if PingInterval>0 {
+			if PingInterval > 0 {
 				go tun.PingPong()
 			}
 			pool.AddTunnel(&tun)

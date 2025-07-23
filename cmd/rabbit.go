@@ -10,12 +10,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/aagun1234/rabbit-mtcp-ws/client"
-	"github.com/aagun1234/rabbit-mtcp-ws/connection"
-	"github.com/aagun1234/rabbit-mtcp-ws/logger"
-	"github.com/aagun1234/rabbit-mtcp-ws/server"
-	"github.com/aagun1234/rabbit-mtcp-ws/tunnel"
-	"github.com/aagun1234/rabbit-mtcp-ws/tunnel_pool"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/client"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/connection"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/logger"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/server"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/tunnel"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/tunnel_pool"
 	"gopkg.in/yaml.v3"
 )
 
@@ -183,7 +183,7 @@ func LoadConfig() (*Config, error) {
 
 	// version
 	if printVersion || printVersion1 {
-		log.Println("Rabbit TCP ws (https://github.com/aagun1234/rabbit-mtcp-ws/)")
+		log.Println("Rabbit TCP ws (https://github.com/aagun1234/rabbit-mtcp-ws-socks5/)")
 		log.Println("Websocket version of Rabbit TCP (https://github.com/ihciah/rabbit-tcp)")
 		log.Printf("Version: %s.\n", Version)
 		return nil, nil

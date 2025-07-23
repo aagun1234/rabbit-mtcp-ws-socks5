@@ -7,8 +7,8 @@ import (
 	"net"
 	"time"
 
-	"github.com/aagun1234/rabbit-mtcp-ws/block"
-	"github.com/aagun1234/rabbit-mtcp-ws/logger"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/block"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/logger"
 	"go.uber.org/atomic"
 )
 
@@ -58,7 +58,7 @@ func (oc *OutboundConnection) RecvRelay() {
 		n, err := oc.HalfOpenConn.Read(recvBuffer)
 		if err == nil {
 			oc.sendData(recvBuffer[:n])
-			oc.logger.InfoAf("OutboundConnection C->S %d bytes",n)
+			oc.logger.InfoAf("OutboundConnection C->S %d bytes", n)
 			oc.HalfOpenConn.SetReadDeadline(time.Time{})
 		} else if err == io.EOF {
 			oc.logger.Debugln("EOF received from outbound connection.")
@@ -147,7 +147,7 @@ func (oc *OutboundConnection) RecvBlock(blk block.Block) {
 	if blk.Type == block.TypePong {
 		oc.logger.Debugf("OutBoundConnection received TypePong.\n")
 	}
-	
+
 	oc.recvQueue <- blk
 }
 

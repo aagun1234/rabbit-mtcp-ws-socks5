@@ -4,10 +4,10 @@ import (
 	"context"
 	"sync"
 
-	"github.com/aagun1234/rabbit-mtcp-ws/block"
-	"github.com/aagun1234/rabbit-mtcp-ws/connection"
-	"github.com/aagun1234/rabbit-mtcp-ws/logger"
-	"github.com/aagun1234/rabbit-mtcp-ws/tunnel_pool"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/block"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/connection"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/logger"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/tunnel_pool"
 )
 
 const (

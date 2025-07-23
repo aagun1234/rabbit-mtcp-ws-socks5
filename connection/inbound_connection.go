@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aagun1234/rabbit-mtcp-ws/block"
-	"github.com/aagun1234/rabbit-mtcp-ws/logger"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/block"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/logger"
 	"go.uber.org/atomic"
 )
 
@@ -23,8 +23,8 @@ type InboundConnection struct {
 
 	readClosed  *atomic.Bool
 	writeClosed *atomic.Bool
-	
-	LastActivity  atomic.Int64
+
+	LastActivity atomic.Int64
 }
 
 func NewInboundConnection(sendQueue chan<- block.Block, ctx context.Context, removeFromPool context.CancelFunc) Connection {
@@ -50,7 +50,6 @@ func NewInboundConnection(sendQueue chan<- block.Block, ctx context.Context, rem
 	return &c
 }
 
-
 func (c *InboundConnection) SetLastActive() {
 	c.LastActivity.Store(time.Now().UnixNano())
 }
@@ -62,7 +61,6 @@ func (c *InboundConnection) GetLastActiveStr() string {
 func (c *InboundConnection) GetLastActive() int64 {
 	return c.LastActivity.Load()
 }
-
 
 func (c *InboundConnection) Read(b []byte) (n int, err error) {
 	readN := 0
@@ -140,9 +138,9 @@ func (c *InboundConnection) Read(b []byte) (n int, err error) {
 }
 
 func (c *InboundConnection) readBlock(blk *block.Block, readN *int, b []byte) (err error) {
-	
+
 	c.SetLastActive()
-	
+
 	switch blk.Type {
 	case block.TypeDisconnect:
 		// TODO: decide shutdown type
