@@ -1,0 +1,16 @@
+mode: client
+verbose: 5
+appname: rabbit-client
+listen: socks5://127.0.0.1:8080
+rabbit-addr:
+  - ws://127.0.0.1:8811/tunnel
+  - ws://127.0.0.1:8812/tunnel
+tunnelN: 4
+retry-failed: true
+use-syslog: true
+dest: 192.168.1.99:7891
+authkey: aaddcc
+ping-interval: 20
+password: 1234
+insecure: true 
+status_server: 127.0.0.1:8888  #not implemented

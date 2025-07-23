@@ -1,0 +1,18 @@
+mode: client
+appname: rabbit_19446
+verbose: 4
+listen: socks5://0.0.0.0:27796
+rabbit-addr:
+  - wss://cf19446.2tutu.top:2053/00163e609c1d
+  - wss://cf19446.2tutu.top:2083/00163e609c1d
+  - wss://cf19446.2tutu.top:2087/00163e609c1d
+  - wss://cf19446.2tutu.top:2096/00163e609c1d
+tunnelN: 4
+retry-failed: true
+use-syslog: true
+dest: 127.0.0.1:7891
+ping-interval: 40
+authkey: b8200150
+password: nomansland
+insecure: true # 开发测试用，生产不推荐
+status_server: 127.0.0.1:8888

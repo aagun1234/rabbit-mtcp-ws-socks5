@@ -1,0 +1,13 @@
+mode: server
+verbose: 5
+appname: rabbit-server
+rabbit-addr:
+  - ws://0.0.0.0:8811/tunnel
+  - ws://0.0.0.0:8812/tunnel
+authkey: aaddcc
+ping-interval: 30
+tls-certfile:
+tls-keyfile:
+password: 1234
+insecure: true
+status-server: 127.0.0.1:8888 #not implemented
