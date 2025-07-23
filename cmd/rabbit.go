@@ -1,9 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"strings"
 
@@ -31,9 +34,10 @@ const (
 )
 
 type Config struct {
-	Mode       string   `yaml:"mode"`        // 运行模式: "client" 或 "server"
-	ConfigFile string   `yaml:"-"`           // 配置文件路径 (不写入YAML)
-	AppName    string   `yaml:"appname"`     // 配置文件路径 (不写入YAML)
+	Mode       string   `yaml:"mode"` // 运行模式: "client" 或 "server"
+	mode       int      `yaml:"-"`
+	configFile string   `yaml:"-"`           // 配置文件路径 (不写入YAML)
+	AppName    string   `yaml:"appname"`     // 日志中标识
 	Verbose    int      `yaml:"verbose"`     // 日志级别: 1-5`
 	RabbitAddr []string `yaml:"rabbit-addr"` // 服务端WebSocket URL列表 (例如: ["ws://server1:8081/tunnel", "wss://server2:8082/tunnel"])
 	Password   string   `yaml:"password"`    //加密用
@@ -223,8 +227,9 @@ func LoadConfig() (*Config, error) {
 	// 4. 命令行参数覆盖YAML文件和默认值
 	// 检查每个参数是否在命令行中被显式设置了，如果是，则用命令行值覆盖
 	if flagsSeen["mode"] {
-		cfg.Mode = modeArg
+		cfg.Mode = strings.ToLower(modeArg)
 	}
+	cfg.Mode = strings.ToLower(cfg.Mode)
 	if flagsSeen["verbose"] {
 		cfg.Verbose = verboseArg
 	}
@@ -237,9 +242,15 @@ func LoadConfig() (*Config, error) {
 	if flagsSeen["password"] {
 		cfg.Password = passwordArg
 	}
-	if flagsSeen["listen"] { cfg.Listen = listenArg }
-	if flagsSeen["dest"] { cfg.Dest = destArg }
-	if flagsSeen["tunnelN"] { cfg.TunnelN = tunnelNArg }
+	if flagsSeen["listen"] {
+		cfg.Listen = listenArg
+	}
+	if flagsSeen["dest"] {
+		cfg.Dest = destArg
+	}
+	if flagsSeen["tunnelN"] {
+		cfg.TunnelN = tunnelNArg
+	}
 	if flagsSeen["authkey"] {
 		cfg.AuthKey = authKeyArg
 	}
@@ -298,10 +309,11 @@ func LoadConfig() (*Config, error) {
 	return cfg, nil
 }
 
-func parseFlags() (pass bool, mode int, password string, addr []string, listen string, dest string, authkey, keyfile, crtfile string, tunnelN int, verbose int, insecure bool, appname string, usesyslog bool, retryfailed bool) {
-	var modeString string
+func parseFlags() (pass bool, cfg *Config) {
+	// mode int, password string, addr []string, listen string, dest string, authkey, keyfile, crtfile string, tunnelN int, verbose int, insecure bool, appname string, usesyslog bool, retryfailed bool) {
 
-	cfg, err := LoadConfig()
+	var err error
+	cfg, err = LoadConfig()
 	if err != nil {
 		fmt.Printf("Failed to load configuration: %v\n", err)
 		os.Exit(1)
@@ -313,23 +325,6 @@ func parseFlags() (pass bool, mode int, password string, addr []string, listen s
 	pass = true
 
 	// mode
-	modeString = strings.ToLower(cfg.Mode)
-	password = cfg.Password
-	appname = cfg.AppName
-	addr = cfg.RabbitAddr
-	listen = cfg.Listen
-	dest = cfg.Dest
-	authkey = cfg.AuthKey
-	keyfile = cfg.TLSKeyFile
-	crtfile = cfg.TLSCertFile
-	verbose = cfg.Verbose
-	tunnelN = cfg.TunnelN
-	insecure = cfg.Insecure
-	usesyslog = cfg.UseSyslog
-	DialTimeoutSec = cfg.DialTimeoutSec
-	ReconnectDelaySec = cfg.ReconnectDelaySec
-	MaxRetries = cfg.MaxRetries
-	retryfailed = cfg.RetryFailedAddr
 
 	connection.OrderedRecvQueueSize = cfg.OrderedRecvQueueSize
 	connection.RecvQueueSize = cfg.RecvQueueSize
@@ -346,40 +341,40 @@ func parseFlags() (pass bool, mode int, password string, addr []string, listen s
 	//tunnel_pool.SendQueueSize          = cfg.SendQueueSize
 	tunnel_pool.RecvQueueSize = cfg.RecvQueueSize
 
-	if modeString == "c" || modeString == "client" {
-		mode = ClientMode
-	} else if modeString == "s" || modeString == "server" {
-		mode = ServerMode
+	if cfg.Mode == "c" || cfg.Mode == "client" {
+		cfg.mode = ClientMode
+	} else if cfg.Mode == "s" || cfg.Mode == "server" {
+		cfg.mode = ServerMode
 	} else {
-		log.Printf("Unsupported mode %s.\n", modeString)
+		log.Printf("Unsupported mode %s.\n", cfg.Mode)
 		pass = false
 		return
 	}
 
 	// password
-	if password == "" {
+	if cfg.Password == "" {
 		log.Println("Password must be specified.")
 		pass = false
 		return
 	}
-	if password == DefaultPassword {
+	if cfg.Password == DefaultPassword {
 		log.Println("Password must be changed instead of default password.")
 		pass = false
 		return
 	}
 
 	// listen, dest, tunnelN
-	if mode == ClientMode {
-		if listen == "" {
+	if cfg.mode == ClientMode {
+		if cfg.Listen == "" {
 			log.Println("Listen address must be specified in client mode.")
 			pass = false
 		}
 		// 如果不是SOCKS5模式，则需要指定dest参数
-		if !strings.HasPrefix(listen, "socks5://") && dest == "" {
+		if !strings.HasPrefix(cfg.Listen, "socks5://") && cfg.Dest == "" {
 			log.Println("Destination address must be specified in TCP forward mode.")
 			pass = false
 		}
-		if tunnelN == 0 {
+		if cfg.TunnelN == 0 {
 			log.Println("Tunnel number must be positive.")
 			pass = false
 		}
@@ -389,33 +384,168 @@ func parseFlags() (pass bool, mode int, password string, addr []string, listen s
 	return
 }
 
+// IsIPInSubnets 检查 IP 是否在给定的子网列表中
+func IsIPInSubnets(ipStr string, subnets []string) (bool, error) {
+
+	if len(subnets) <= 0 {
+		return true, nil
+	}
+
+	// 处理带端口的 IP（如 "192.168.1.1:8080"）
+	ipStr, _, err := net.SplitHostPort(ipStr)
+	if err != nil {
+		// 如果没有端口（如直接是 "192.168.1.1"），继续解析
+		ipStr = strings.TrimSpace(ipStr)
+	}
+
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false, err
+	}
+
+	for _, subnet := range subnets {
+
+		if strings.Contains(subnet, ",") {
+			subnets1 := strings.Split(subnet, ",")
+			for _, subnet1 := range subnets1 {
+				_, cidr, err := net.ParseCIDR(subnet1)
+				if err != nil {
+					log.Printf("[main] Check ACL error: %s", err)
+					continue
+				}
+
+				if cidr.Contains(ip) {
+					return true, nil
+				}
+			}
+		} else {
+			_, cidr, err := net.ParseCIDR(subnet)
+			if err != nil {
+				log.Printf("[main] Check ACL error: %s", err)
+				return false, err
+			}
+
+			if cidr.Contains(ip) {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
+}
+
+func statusServer(listen, acl string, cfg *Config) {
+	statlogger := logger.NewLogger("[StatusServer]")
+	acls := strings.Split(acl, ",")
+	if len(acls) == 1 {
+		if acls[0] == "" {
+			acls[0] = "0.0.0.0/0"
+		}
+	}
+	// 解析基本认证信息
+	var username, password string
+	if atIndex := strings.Index(listen, "@"); atIndex > 0 {
+		authPart := listen[:atIndex]
+		listen = listen[atIndex+1:]
+		if colonIndex := strings.Index(authPart, ":"); colonIndex > 0 {
+			username = authPart[:colonIndex]
+			password = authPart[colonIndex+1:]
+		}
+	}
+
+	// 创建带基本认证的handler
+	handler := http.NewServeMux()
+	handler.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
+		ip := r.RemoteAddr
+		isAllowed, err := IsIPInSubnets(ip, acls)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if !isAllowed {
+			w.WriteHeader(http.StatusUnauthorized)
+			log.Printf("[main] StatusServer: Unauthorized from %s", r.RemoteAddr)
+			return
+		}
+
+		if username != "" && !checkBasicAuth(r, username, password) {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(cfg)
+	})
+
+	handler.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		ip := r.RemoteAddr
+		isAllowed, err := IsIPInSubnets(ip, acls)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if !isAllowed {
+			w.WriteHeader(http.StatusUnauthorized)
+			log.Printf("[main] StatusServer: Unauthorized from %s", r.RemoteAddr)
+			return
+		}
+		if username != "" && !checkBasicAuth(r, username, password) {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		status := map[string]interface{}{
+			"running": true,
+			"mode":    cfg.Mode,
+			"version": Version,
+		}
+		json.NewEncoder(w).Encode(status)
+	})
+
+	statlogger.Infof("Starting status server on %s", listen)
+	if err := http.ListenAndServe(listen, handler); err != nil {
+		statlogger.Errorf("Status server error: %v", err)
+	}
+}
+
+func checkBasicAuth(r *http.Request, username, password string) bool {
+	user, pass, ok := r.BasicAuth()
+	return ok && user == username && pass == password
+}
+
 func main() {
-	pass, mode, password, addr, listen, dest, authkey, keyfile, crtfile, tunnelN, verbose, insecure, appname, usesyslog, retryfailed := parseFlags()
+	pass, mcfg := parseFlags()
 	if !pass {
 		return
 	}
-	logger.LEVEL = verbose
-	logger.AppName = appname
-	logger.UseSyslog = usesyslog
+	logger.LEVEL = mcfg.Verbose
+	logger.AppName = mcfg.AppName
+	logger.UseSyslog = mcfg.UseSyslog
 	mainlogger := logger.NewLogger("[ClientManager]")
 
-	mainlogger.Debugf("mode: %v, password: %v, addr: %v, listen: %v, dest: %v, authkey: %v, keyfile: %v, crtfile: %v, tunnelN: %v, verbose: %v\n", mode, password, addr, listen, dest, authkey, keyfile, crtfile, tunnelN, verbose)
-	cipher, _ := tunnel.NewAEADCipher("CHACHA20-IETF-POLY1305", nil, password)
-	if mode == ClientMode {
-		c := client.NewClient(tunnelN, addr, cipher, authkey, insecure, retryfailed)
+	mainlogger.Debugf("mode: %v, password: %v, addr: %v, listen: %v, dest: %v, authkey: %v, keyfile: %v, crtfile: %v, tunnelN: %v, verbose: %v\n", mcfg.Mode, mcfg.Password, mcfg.RabbitAddr, mcfg.Listen, mcfg.Dest, mcfg.AuthKey, mcfg.TLSKeyFile, mcfg.TLSCertFile, mcfg.TunnelN, mcfg.Verbose)
+	cipher, _ := tunnel.NewAEADCipher("CHACHA20-IETF-POLY1305", nil, mcfg.Password)
+	if mcfg.StatusServer != "" {
+		go statusServer(mcfg.StatusServer, mcfg.StatusACL, mcfg)
+		mainlogger.Infof("Starting status server mode with address: %s\n", mcfg.StatusServer)
+	}
+
+	if mcfg.mode == ClientMode {
+		c := client.NewClient(mcfg.TunnelN, mcfg.RabbitAddr, cipher, mcfg.AuthKey, mcfg.Insecure, mcfg.RetryFailedAddr)
 
 		// 检查listen参数是否以socks5://开头
-		if strings.HasPrefix(listen, "socks5://") {
-			mainlogger.Infof("Starting SOCKS5 proxy mode with address: %s\n", listen)
-			c.ServeForwardSocks5(listen)
+		if strings.HasPrefix(mcfg.Listen, "socks5://") {
+			mainlogger.Infof("Starting SOCKS5 proxy mode with address: %s\n", mcfg.Listen)
+			c.ServeForwardSocks5(mcfg.Listen)
 		} else {
-			mainlogger.Infof("Starting TCP forward mode from %s to %s\n", listen, dest)
-			c.ServeForward(listen, dest)
+			mainlogger.Infof("Starting TCP forward mode from %s to %s\n", mcfg.Listen, mcfg.Dest)
+			c.ServeForward(mcfg.Listen, mcfg.Dest)
 		}
 	} else {
 
-		s := server.NewServer(cipher, authkey, keyfile, crtfile)
-		s.Serve(addr)
+		s := server.NewServer(cipher, mcfg.AuthKey, mcfg.TLSKeyFile, mcfg.TLSCertFile)
+		s.Serve(mcfg.RabbitAddr)
 	}
 }
 
