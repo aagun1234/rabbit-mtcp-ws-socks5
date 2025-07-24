@@ -20,6 +20,7 @@ dest: 192.168.1.99:7891
 authkey: aaddcc
 #websocket的HTTP认证串
 ping-interval: 20
+#keepalive间隔，如果连接上有数据收到，则不进行，如果为0，则不进行
 insecure: true 
 #忽略TLS证书校验
 use-syslog: true

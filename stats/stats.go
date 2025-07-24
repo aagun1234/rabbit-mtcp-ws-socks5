@@ -104,7 +104,7 @@ func (s *Stats) GetStats() map[string]interface{} {
 	return map[string]interface{}{
 		"total_sent_bytes":    totalSent,
 		"total_recv_bytes":    totalRecv,
-		"connection_count":    connCount,
+		"tunnel_count":        connCount,
 		"send_rate_bytes_sec": sendRate,
 		"recv_rate_bytes_sec": recvRate,
 	}

@@ -66,7 +66,11 @@ func (tp *TunnelPool) AddTunnel(tunnel *Tunnel) {
 	go tunnel.OutboundRelay(tp.sendQueue, tp.sendRetryQueue)
 	go tunnel.InboundRelay(tp.recvQueue)
 	// 启动Ping-Pong协程
-	go tunnel.PingPong()
+	if PingInterval > 0 {
+		go tunnel.PingPong()
+	} else {
+		tp.logger.Warnln("Do not ping-pong.\n")
+	}
 }
 
 // Remove a tunnel from tunnelPool and stop bi-relay
@@ -106,6 +110,7 @@ func (tp *TunnelPool) GetTunnelConnsInfo() []map[string]interface{} {
 	for _, tunn := range tp.tunnelMapping {
 		tunnInfo := map[string]interface{}{
 			"tunnel_id":     tunn.tunnelID,
+			"is_active":     tunn.IsActive,
 			"last_activity": tunn.GetLastActiveStr(),
 			"latency_nano":  tunn.GetLatencyNano(),
 			"sent_bytes":    tunn.SentBytes,
@@ -113,8 +118,8 @@ func (tp *TunnelPool) GetTunnelConnsInfo() []map[string]interface{} {
 			//"latency_nano":  fmt.Sprintf("%.2f us", tunn.GetLatencyNano()/1000),
 			//"sent_bytes":    fmt.Sprintf("%.2f K", tunn.SentBytes/1024),
 			//"recv_bytes":    fmt.Sprintf("%.2f K", tunn.RecvBytes/1024),
-			"ws_raddr": tunn.Conn.RemoteAddr(),
-			"ws_laddr": tunn.Conn.LocalAddr(),
+			"ws_remote_addr": tunn.Conn.RemoteAddr(),
+			"ws_local_addr":  tunn.Conn.LocalAddr(),
 		}
 		tp.logger.Debugf("GetTunnelConnsInfo : TunnelID %d.", tunn.tunnelID)
 
