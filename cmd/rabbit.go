@@ -12,8 +12,11 @@ import (
 
 	"github.com/aagun1234/rabbit-mtcp-ws-socks5/client"
 	"github.com/aagun1234/rabbit-mtcp-ws-socks5/connection"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/connection_pool"
 	"github.com/aagun1234/rabbit-mtcp-ws-socks5/logger"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/peer"
 	"github.com/aagun1234/rabbit-mtcp-ws-socks5/server"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/stats"
 	"github.com/aagun1234/rabbit-mtcp-ws-socks5/tunnel"
 	"github.com/aagun1234/rabbit-mtcp-ws-socks5/tunnel_pool"
 	"gopkg.in/yaml.v3"
@@ -25,6 +28,11 @@ var (
 	DialTimeoutSec    = 6
 	ReconnectDelaySec = 5
 	MaxRetries        = 3
+	// 全局连接池，用于在statusServer中获取连接信息
+	ClientConnectionPool *connection_pool.ConnectionPool
+	ServerConnectionPool *connection_pool.ConnectionPool
+	// 服务端 PeerGroup，用于获取所有 ServerPeer 的连接池
+	ServerPeerGroup *peer.PeerGroup
 )
 
 const (
@@ -52,8 +60,8 @@ type Config struct {
 	UseSyslog       bool   `yaml:"use-syslog"`   // 客户端是否跳过服务端证书验证InsecureSkipVerify
 	RetryFailedAddr bool   `yaml:"retry-failed"` // 对于客户端连接失败的rabbit-addr，是否反复重试，如果否，则不会重试连接，直到所有的都连不上
 
-	StatusServer string `yaml:"status"`     // 状态服务侦听的本地TCP地址 (例如: "127.0.0.1:8010")
-	StatusACL    string `yaml:"status-acl"` // 状态服务ACL
+	StatusServer string `yaml:"status-server"` // 状态服务侦听的本地TCP地址 (例如: "127.0.0.1:8010")
+	StatusACL    string `yaml:"status-acl"`    // 状态服务ACL
 
 	PingIntervalSec int `yaml:"ping-interval"` // ping间隔 30
 
@@ -434,7 +442,7 @@ func IsIPInSubnets(ipStr string, subnets []string) (bool, error) {
 	return false, nil
 }
 
-func statusServer(listen, acl string, cfg *Config) {
+func statusServer1(listen, acl string, cfg *Config, c *client.Client) {
 	statlogger := logger.NewLogger("[StatusServer]")
 	acls := strings.Split(acl, ",")
 	if len(acls) == 1 {
@@ -457,20 +465,23 @@ func statusServer(listen, acl string, cfg *Config) {
 	handler := http.NewServeMux()
 	handler.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		ip := r.RemoteAddr
+		statlogger.InfoAf("%s request for config", ip)
 		isAllowed, err := IsIPInSubnets(ip, acls)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
+			statlogger.Errorf("Error matching %s with ACL: %v", ip, err)
 			return
 		}
 		if !isAllowed {
 			w.WriteHeader(http.StatusUnauthorized)
-			log.Printf("[main] StatusServer: Unauthorized from %s", r.RemoteAddr)
+			statlogger.Errorf("%s blocked by ACL", ip)
 			return
 		}
 
 		if username != "" && !checkBasicAuth(r, username, password) {
 			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
 			w.WriteHeader(http.StatusUnauthorized)
+			statlogger.Errorf("%s blocked by Basic Auth", ip)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -479,27 +490,182 @@ func statusServer(listen, acl string, cfg *Config) {
 
 	handler.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		ip := r.RemoteAddr
+		statlogger.InfoAf("%s request status config", ip)
 		isAllowed, err := IsIPInSubnets(ip, acls)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
+			statlogger.Errorf("Error matching %s with ACL: %v", ip, err)
 			return
 		}
 		if !isAllowed {
 			w.WriteHeader(http.StatusUnauthorized)
-			log.Printf("[main] StatusServer: Unauthorized from %s", r.RemoteAddr)
+			statlogger.Errorf("%s blocked by ACL", ip)
 			return
 		}
 		if username != "" && !checkBasicAuth(r, username, password) {
 			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
 			w.WriteHeader(http.StatusUnauthorized)
+			statlogger.Errorf("%s blocked by Basic Auth", ip)
+			return
+		}
+
+		// 获取统计数据
+		var statsData map[string]interface{}
+		if cfg.mode == ClientMode {
+			statsData = stats.ClientStats.GetStats()
+		} else {
+			statsData = stats.ServerStats.GetStats()
+		}
+		statlogger.Debugf("Data: %v", statsData)
+
+		// 获取连接信息
+		var connectionsInfo []map[string]interface{}
+		var tunnelsInfo []map[string]interface{}
+		connectionsInfo = make([]map[string]interface{}, 0, 1)
+		tunnelsInfo = make([]map[string]interface{}, 0, 1)
+		if cfg.mode == ClientMode {
+			ClientConnectionPool = c.Peer.GetConnectionPool()
+			statlogger.Debugf("ClientConnectionPool: %v", ClientConnectionPool)
+			// 客户端模式：从单一连接池获取连接信息
+			connectionsInfo = ClientConnectionPool.GetConnectionsInfo()
+			statlogger.Debugf("connectionsInfo: %v", connectionsInfo)
+			tunnelsInfo = ClientConnectionPool.GetTunnelsInfo()
+			statlogger.Debugf("tunnelsInfo: %v", tunnelsInfo)
+		}
+
+		// 合并基本状态和统计数据
+		status := map[string]interface{}{
+			"running":     true,
+			"mode":        cfg.Mode,
+			"version":     Version,
+			"stats":       statsData,
+			"connections": connectionsInfo,
+			"tunnels":     tunnelsInfo,
+			"tunnelPool":  ClientConnectionPool.GetTunnelPoolInfo(),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		statlogger.Debugf("Status: %v", status)
+		json.NewEncoder(w).Encode(status)
+	})
+
+	statlogger.Infof("Starting status server on %s", listen)
+	if err := http.ListenAndServe(listen, handler); err != nil {
+		statlogger.Errorf("Status server error: %v", err)
+	}
+}
+
+func statusServer2(listen, acl string, cfg *Config, s *server.Server) {
+	statlogger := logger.NewLogger("[StatusServer]")
+	acls := strings.Split(acl, ",")
+	if len(acls) == 1 {
+		if acls[0] == "" {
+			acls[0] = "0.0.0.0/0"
+		}
+	}
+	// 解析基本认证信息
+	var username, password string
+	if atIndex := strings.Index(listen, "@"); atIndex > 0 {
+		authPart := listen[:atIndex]
+		listen = listen[atIndex+1:]
+		if colonIndex := strings.Index(authPart, ":"); colonIndex > 0 {
+			username = authPart[:colonIndex]
+			password = authPart[colonIndex+1:]
+		}
+	}
+
+	// 创建带基本认证的handler
+	handler := http.NewServeMux()
+	handler.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
+		ip := r.RemoteAddr
+		statlogger.InfoAf("%s request for config", ip)
+		isAllowed, err := IsIPInSubnets(ip, acls)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			statlogger.Errorf("Error matching %s with ACL: %v", ip, err)
+			return
+		}
+		if !isAllowed {
+			w.WriteHeader(http.StatusUnauthorized)
+			statlogger.Errorf("%s blocked by ACL", ip)
+			return
+		}
+
+		if username != "" && !checkBasicAuth(r, username, password) {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			statlogger.Errorf("%s blocked by Basic Auth", ip)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		status := map[string]interface{}{
-			"running": true,
-			"mode":    cfg.Mode,
-			"version": Version,
+		json.NewEncoder(w).Encode(cfg)
+	})
+
+	handler.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		ip := r.RemoteAddr
+		statlogger.InfoAf("%s request status config", ip)
+		isAllowed, err := IsIPInSubnets(ip, acls)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			statlogger.Errorf("Error matching %s with ACL: %v", ip, err)
+			return
 		}
+		if !isAllowed {
+			w.WriteHeader(http.StatusUnauthorized)
+			statlogger.Errorf("%s blocked by ACL", ip)
+			return
+		}
+		if username != "" && !checkBasicAuth(r, username, password) {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			statlogger.Errorf("%s blocked by Basic Auth", ip)
+			return
+		}
+
+		// 获取统计数据
+		var statsData map[string]interface{}
+		if cfg.mode == ClientMode {
+			statsData = stats.ClientStats.GetStats()
+		} else {
+			statsData = stats.ServerStats.GetStats()
+		}
+		statlogger.Debugf("Data: %v", statsData)
+
+		// 获取连接信息
+		var connectionsInfo []map[string]interface{}
+		var tunnelsInfo []map[string]interface{}
+		var tunnelPoolsInfo []map[string]interface{}
+		connectionsInfo = make([]map[string]interface{}, 0)
+		tunnelsInfo = make([]map[string]interface{}, 0)
+		tunnelPoolsInfo = make([]map[string]interface{}, 0)
+		if cfg.mode == ServerMode {
+			ServerPeerGroup = s.GetPeerGroup()
+			// 服务端模式：从所有 ServerPeer 的连接池获取连接信息
+
+			connectionPools := ServerPeerGroup.GetAllConnectionPools()
+			statlogger.Debugf("Length of connectionPools: %d", len(connectionPools))
+			tunnelPools := ServerPeerGroup.GetAllTunnelPools()
+			// 遍历所有连接池，获取连接信息
+			for _, pool := range connectionPools {
+				connectionsInfo = append(connectionsInfo, pool.GetConnectionsInfo()...)
+			}
+			for _, tpool := range tunnelPools {
+				tunnelPoolsInfo = append(tunnelPoolsInfo, tpool.GetTunnelPoolInfo())
+				tunnelsInfo = append(tunnelsInfo, tpool.GetTunnelConnsInfo()...)
+			}
+		}
+
+		// 合并基本状态和统计数据
+		status := map[string]interface{}{
+			"running":     true,
+			"mode":        cfg.Mode,
+			"version":     Version,
+			"stats":       statsData,
+			"connections": connectionsInfo,
+			"tunnels":     tunnelsInfo,
+			"tunnelpools": tunnelPoolsInfo,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		statlogger.Debugf("Status: %v", status)
 		json.NewEncoder(w).Encode(status)
 	})
 
@@ -526,13 +692,20 @@ func main() {
 
 	mainlogger.Debugf("mode: %v, password: %v, addr: %v, listen: %v, dest: %v, authkey: %v, keyfile: %v, crtfile: %v, tunnelN: %v, verbose: %v\n", mcfg.Mode, mcfg.Password, mcfg.RabbitAddr, mcfg.Listen, mcfg.Dest, mcfg.AuthKey, mcfg.TLSKeyFile, mcfg.TLSCertFile, mcfg.TunnelN, mcfg.Verbose)
 	cipher, _ := tunnel.NewAEADCipher("CHACHA20-IETF-POLY1305", nil, mcfg.Password)
-	if mcfg.StatusServer != "" {
-		go statusServer(mcfg.StatusServer, mcfg.StatusACL, mcfg)
-		mainlogger.Infof("Starting status server mode with address: %s\n", mcfg.StatusServer)
-	}
+
+	// 初始化统计模块，使用20秒的历史窗口
+	stats.InitStats(20)
 
 	if mcfg.mode == ClientMode {
 		c := client.NewClient(mcfg.TunnelN, mcfg.RabbitAddr, cipher, mcfg.AuthKey, mcfg.Insecure, mcfg.RetryFailedAddr)
+
+		// 使用 GetConnectionPool 方法获取连接池
+		ClientConnectionPool = c.Peer.GetConnectionPool()
+
+		if mcfg.StatusServer != "" {
+			go statusServer1(mcfg.StatusServer, mcfg.StatusACL, mcfg, &c)
+			mainlogger.Infof("Starting status server mode with address: %s\n", mcfg.StatusServer)
+		}
 
 		// 检查listen参数是否以socks5://开头
 		if strings.HasPrefix(mcfg.Listen, "socks5://") {
@@ -545,6 +718,15 @@ func main() {
 	} else {
 
 		s := server.NewServer(cipher, mcfg.AuthKey, mcfg.TLSKeyFile, mcfg.TLSCertFile)
+
+		if mcfg.StatusServer != "" {
+			go statusServer2(mcfg.StatusServer, mcfg.StatusACL, mcfg, &s)
+			mainlogger.Infof("Starting status server mode with address: %s\n", mcfg.StatusServer)
+		}
+		// 保存服务端的 PeerGroup 到全局变量，用于在 statusServer 中获取连接信息
+		// 由于服务端可能有多个连接池（每个 ServerPeer 一个），我们需要通过 PeerGroup 获取所有连接池
+		ServerPeerGroup = s.GetPeerGroup()
+
 		s.Serve(mcfg.RabbitAddr)
 	}
 }

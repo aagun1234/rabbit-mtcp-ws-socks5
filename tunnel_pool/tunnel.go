@@ -9,10 +9,12 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/aagun1234/rabbit-mtcp-ws-socks5/block"
 	"github.com/aagun1234/rabbit-mtcp-ws-socks5/logger"
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/stats"
 	"github.com/aagun1234/rabbit-mtcp-ws-socks5/tunnel"
 	"github.com/gorilla/websocket"
 	"go.uber.org/atomic"
@@ -30,18 +32,21 @@ type Tunnel struct {
 	SentBytes    uint64
 	LastActivity atomic.Int64
 	LatencyNano  atomic.Int64
+	IsClientMode bool // 标识是客户端还是服务端模式
 }
 
 // Create a new tunnel from a net.Conn and cipher with random tunnelID
 // func NewActiveTunnel(conn net.Conn, ciph tunnel.Cipher, peerID uint32) (Tunnel, error) {
 func NewActiveTunnel(wsConn *websocket.Conn, ciph tunnel.Cipher, peerID uint32) (Tunnel, error) {
 	tun := newTunnelWithID(wsConn, ciph, peerID)
+	tun.IsClientMode = true // 客户端主动创建隧道
 	return tun, tun.activeExchangePeerID()
 }
 
 // func NewPassiveTunnel(conn net.Conn, ciph tunnel.Cipher) (Tunnel, error) {
 func NewPassiveTunnel(wsConn *websocket.Conn, ciph tunnel.Cipher) (Tunnel, error) {
 	tun := newTunnelWithID(wsConn, ciph, 0)
+	tun.IsClientMode = false // 服务端被动接受隧道
 	return tun, tun.passiveExchangePeerID()
 }
 
@@ -51,7 +56,7 @@ func newTunnelWithID(wsConn *websocket.Conn, ciph tunnel.Cipher, peerID uint32) 
 	tunnelID := rand.Uint32()
 	tun := Tunnel{
 		//Conn:     tunnel.NewEncryptedConn(conn, ciph),
-		Conn:     &WebsocketConnAdapter{Conn: wsConn},
+		Conn:     &WebsocketConnAdapter{Conn: wsConn, writeMu: sync.Mutex{}},
 		peerID:   peerID,
 		tunnelID: tunnelID,
 		logger:   logger.NewLogger(fmt.Sprintf("[Tunnel-%d]", tunnelID)),
@@ -148,6 +153,12 @@ func (tunnel *Tunnel) recvPeerID() (uint32, error) {
 
 // Read block from send channel, pack it and send, client to server
 func (tunnel *Tunnel) OutboundRelay(normalQueue, retryQueue chan block.Block) {
+	// 确保 ctx 已经初始化
+	if tunnel.ctx == nil {
+		tunnel.logger.Errorln("OutboundRelay aborted: context not initialized")
+		return
+	}
+
 	tunnel.logger.InfoAf("Outbound relay started. (PeerID: %d)", tunnel.peerID)
 	for {
 		// cancel is of highest priority
@@ -186,6 +197,18 @@ func (tunnel *Tunnel) packThenSend(blk block.Block, retryQueue chan block.Block)
 	tunnel.Conn.SetWriteDeadline(time.Now().Add(time.Duration(TunnelBlockTimeoutSec) * time.Second))
 	n, err := io.Copy(tunnel.Conn, reader)
 
+	if err == nil && n == int64(len(dataToSend)) {
+		// 更新发送字节统计
+		tunnel.SentBytes += uint64(n)
+
+		// 根据模式更新全局统计
+		if tunnel.IsClientMode {
+			stats.ClientStats.AddSentBytes(uint64(n))
+		} else {
+			stats.ServerStats.AddSentBytes(uint64(n))
+		}
+	}
+
 	if (err != nil || n != int64(len(dataToSend))) && retryQueue != nil {
 		tunnel.logger.Warnf("Error when send bytes to tunnel: (n: %d, error: %v).\n", n, err)
 		// Tunnel down and message has not been fully sent.
@@ -202,6 +225,12 @@ func (tunnel *Tunnel) packThenSend(blk block.Block, retryQueue chan block.Block)
 
 // Read bytes from connection, parse it to block then put in recv channel
 func (tunnel *Tunnel) InboundRelay(output chan<- block.Block) {
+	// 确保 ctx 已经初始化
+	if tunnel.ctx == nil {
+		tunnel.logger.Errorln("InboundRelay aborted: context not initialized")
+		return
+	}
+
 	tunnel.logger.InfoAf("Inbound relay started. (PeerID: %d)", tunnel.peerID)
 	for {
 		select {
@@ -212,6 +241,17 @@ func (tunnel *Tunnel) InboundRelay(output chan<- block.Block) {
 				blk, err := block.NewBlockFromReader(tunnel.Conn)
 				if err == nil {
 					tunnel.logger.Debugf("Block received from tunnel(type: %d) successfully after close.\n", blk.Type)
+
+					// 更新接收字节统计
+					receivedBytes := uint64(len(blk.Pack()))
+					tunnel.RecvBytes += receivedBytes
+
+					// 根据模式更新全局统计
+					if tunnel.IsClientMode {
+						stats.ClientStats.AddRecvBytes(receivedBytes)
+					} else {
+						stats.ServerStats.AddRecvBytes(receivedBytes)
+					}
 
 					output <- *blk
 
@@ -232,6 +272,18 @@ func (tunnel *Tunnel) InboundRelay(output chan<- block.Block) {
 			} else {
 				tunnel.logger.Debugf("Block received from tunnel(type: %d)successfully.\n", blk.Type)
 				tunnel.SetLastActive()
+
+				// 更新接收字节统计
+				receivedBytes := uint64(len(blk.Pack()))
+				tunnel.RecvBytes += receivedBytes
+
+				// 根据模式更新全局统计
+				if tunnel.IsClientMode {
+					stats.ClientStats.AddRecvBytes(receivedBytes)
+				} else {
+					stats.ServerStats.AddRecvBytes(receivedBytes)
+				}
+
 				if blk.Type == block.TypePing {
 					clatency := int64(binary.LittleEndian.Uint64(blk.BlockData))
 					tunnel.SetLatencyNano(clatency)
@@ -258,6 +310,12 @@ func (tunnel *Tunnel) InboundRelay(output chan<- block.Block) {
 
 // Read bytes from connection, parse it to block then put in recv channel
 func (tunnel *Tunnel) PingPong() {
+	// 确保 ctx 已经初始化
+	if tunnel.ctx == nil {
+		tunnel.logger.Errorln("PingPong aborted: context not initialized")
+		return
+	}
+
 	tunnel.logger.InfoAln("PingPong started.")
 
 	ticker := time.NewTicker(1 * time.Second)
@@ -292,7 +350,8 @@ func (tunnel *Tunnel) closeThenCancel() {
 // ==========================================================
 type WebsocketConnAdapter struct {
 	*websocket.Conn
-	reader io.Reader
+	reader  io.Reader
+	writeMu sync.Mutex // 添加互斥锁，保护并发写入
 }
 
 func (c *WebsocketConnAdapter) Read(b []byte) (int, error) {
@@ -314,6 +373,9 @@ func (c *WebsocketConnAdapter) Read(b []byte) (int, error) {
 }
 
 func (c *WebsocketConnAdapter) Write(b []byte) (int, error) {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
 	err := c.Conn.WriteMessage(websocket.BinaryMessage, b)
 	if err != nil {
 		return 0, err

@@ -16,21 +16,21 @@ import (
 )
 
 type Client struct {
-	peer    peer.ClientPeer
+	Peer    peer.ClientPeer
 	logger  *logger.Logger
 	authkey string
 }
 
 func NewClient(tunnelNum int, endpoints []string, cipher tunnel.Cipher, authkey string, insecure bool, retryfailed bool) Client {
 	return Client{
-		peer:    peer.NewClientPeer(tunnelNum, endpoints, cipher, authkey, insecure, retryfailed),
+		Peer:    peer.NewClientPeer(tunnelNum, endpoints, cipher, authkey, insecure, retryfailed),
 		logger:  logger.NewLogger("[Client]"),
 		authkey: authkey,
 	}
 }
 
 func (c *Client) Dial(address string) connection.HalfOpenConn {
-	return c.peer.Dial(address)
+	return c.Peer.Dial(address)
 }
 
 func (c *Client) ServeForward(listen, dest string) error {

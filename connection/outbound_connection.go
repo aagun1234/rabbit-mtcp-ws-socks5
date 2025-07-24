@@ -58,6 +58,8 @@ func (oc *OutboundConnection) RecvRelay() {
 		n, err := oc.HalfOpenConn.Read(recvBuffer)
 		if err == nil {
 			oc.sendData(recvBuffer[:n])
+			// 更新接收字节计数
+			oc.RecvBytes.Add(uint64(n))
 			oc.logger.InfoAf("OutboundConnection C->S %d bytes", n)
 			oc.HalfOpenConn.SetReadDeadline(time.Time{})
 		} else if err == io.EOF {
@@ -79,6 +81,8 @@ func (oc *OutboundConnection) RecvRelay() {
 				if err == nil {
 					oc.logger.Debugln("Data received from outbound connection successfully after close.")
 					oc.sendData(recvBuffer[:n])
+					// 更新接收字节计数
+					oc.RecvBytes.Add(uint64(n))
 				} else {
 					oc.logger.Debugf("Error when receiving data from outbound connection after close: %v.\n", err)
 					break
@@ -109,8 +113,10 @@ func (oc *OutboundConnection) SendRelay() {
 			case block.TypeData:
 				oc.logger.Debugln("Send out DATA bytes.")
 				oc.HalfOpenConn.SetWriteDeadline(time.Now().Add(time.Duration(OutboundBlockTimeoutSec) * time.Second))
-				_, err := oc.HalfOpenConn.Write(blk.BlockData)
+				n, err := oc.HalfOpenConn.Write(blk.BlockData)
 				if err == nil {
+					// 更新发送字节计数
+					oc.SentBytes.Add(uint64(n))
 					oc.HalfOpenConn.SetWriteDeadline(time.Time{})
 				} else {
 					oc.logger.Errorf("Error when send relay outbound connection: %v\n.", err)

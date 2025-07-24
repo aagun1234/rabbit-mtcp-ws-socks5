@@ -37,7 +37,7 @@ func (x *blockProcessor) OrderedRelay(connection Connection) {
 	x.logger.InfoAf("Ordered Relay of Connection %d started.\n", connection.GetConnectionID())
 	for {
 		select {
-		case blk := <-connection.getRecvQueue():
+		case blk := <-connection.GetRecvQueue():
 			if blk.BlockID+1 > x.lastRecvBlockID {
 				// Update lastRecvBlockID
 				x.lastRecvBlockID = blk.BlockID + 1
@@ -45,7 +45,7 @@ func (x *blockProcessor) OrderedRelay(connection Connection) {
 			if x.recvBlockID == blk.BlockID {
 				// Can send directly
 				x.logger.Debugf("Send Block %d directly\n", blk.BlockID)
-				connection.getOrderedRecvQueue() <- blk
+				connection.GetOrderedRecvQueue() <- blk
 				x.recvBlockID++
 				for {
 					blk, ok := x.cache[x.recvBlockID]
@@ -53,7 +53,7 @@ func (x *blockProcessor) OrderedRelay(connection Connection) {
 						break
 					}
 					x.logger.Debugf("Send Block %d from cache\n", blk.BlockID)
-					connection.getOrderedRecvQueue() <- blk
+					connection.GetOrderedRecvQueue() <- blk
 					delete(x.cache, x.recvBlockID)
 					x.recvBlockID++
 				}

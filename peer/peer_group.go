@@ -3,6 +3,7 @@ package peer
 import (
 	"context"
 
+	"github.com/aagun1234/rabbit-mtcp-ws-socks5/connection_pool"
 	"github.com/aagun1234/rabbit-mtcp-ws-socks5/logger"
 	"github.com/aagun1234/rabbit-mtcp-ws-socks5/tunnel"
 	"github.com/aagun1234/rabbit-mtcp-ws-socks5/tunnel_pool"
@@ -75,6 +76,36 @@ func (pg *PeerGroup) RemovePeer(peerID uint32) {
 	pg.lock.Lock()
 	defer pg.lock.Unlock()
 	delete(pg.peerMapping, peerID)
+}
+
+// GetAllConnectionPools 返回所有 ServerPeer 的连接池
+func (pg *PeerGroup) GetAllConnectionPools() []*connection_pool.ConnectionPool {
+	pg.lock.Lock()
+	defer pg.lock.Unlock()
+
+	pools := make([]*connection_pool.ConnectionPool, 0, len(pg.peerMapping))
+	pg.logger.Debugf("Length of pools: %d.\n", len(pg.peerMapping))
+	for _, peer := range pg.peerMapping {
+		pg.logger.Debugf("Adding ConnectionPool of Peer: %d.\n", peer.peerID)
+		pools = append(pools, peer.GetConnectionPool())
+	}
+
+	return pools
+}
+
+// GetAllConnectionPools 返回所有 ServerPeer 的连接池
+func (pg *PeerGroup) GetAllTunnelPools() []*tunnel_pool.TunnelPool {
+	pg.lock.Lock()
+	defer pg.lock.Unlock()
+
+	pools := make([]*tunnel_pool.TunnelPool, 0, len(pg.peerMapping))
+	pg.logger.Debugf("Length of Tunnelpools: %d.\n", len(pg.peerMapping))
+	for _, peer := range pg.peerMapping {
+		pg.logger.Debugf("Adding TunnelPool of Peer: %d.\n", peer.peerID)
+		pools = append(pools, peer.GetTunnelPool())
+	}
+
+	return pools
 }
 
 // ===================================

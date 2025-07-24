@@ -134,3 +134,44 @@ func (cp *ConnectionPool) stopRelay() {
 	cp.logger.Infoln("Stop all ConnectionPool Relay.")
 	cp.cancel()
 }
+
+// GetConnectionsInfo 获取所有连接的详细信息
+func (cp *ConnectionPool) GetConnectionsInfo() []map[string]interface{} {
+	cp.mappingLock.RLock()
+	defer cp.mappingLock.RUnlock()
+
+	result := make([]map[string]interface{}, 0, len(cp.connectionMapping))
+	cp.logger.Debugf("Length of connectionMapping: %d.", len(cp.connectionMapping))
+	for _, conn := range cp.connectionMapping {
+		connInfo := map[string]interface{}{
+			"connection_id":             conn.GetConnectionID(),
+			"last_activity":             conn.GetLastActiveStr(),
+			"latency_nano":              conn.GetLatencyNano(),
+			"recv_queue_length":         len(conn.GetRecvQueue()),
+			"ordered_recv_queue_length": len(conn.GetOrderedRecvQueue()),
+			"sent_bytes":                conn.GetSentBytes(),
+			"recv_bytes":                conn.GetRecvBytes(),
+		}
+		cp.logger.Debugf("ConnecttionID: %s.", conn.GetConnectionID())
+
+		result = append(result, connInfo)
+	}
+
+	return result
+}
+
+// GetConnectionsInfo 获取所有连接的详细信息
+func (cp *ConnectionPool) GetTunnelsInfo() []map[string]interface{} {
+	cp.mappingLock.RLock()
+	defer cp.mappingLock.RUnlock()
+
+	result := cp.tunnelPool.GetTunnelConnsInfo()
+	return result
+}
+
+func (cp *ConnectionPool) GetTunnelPoolInfo() map[string]interface{} {
+	cp.mappingLock.RLock()
+	defer cp.mappingLock.RUnlock()
+
+	return cp.tunnelPool.GetTunnelPoolInfo()
+}

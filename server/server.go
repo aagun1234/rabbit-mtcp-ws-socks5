@@ -32,6 +32,11 @@ type Server struct {
 	authkey   string
 }
 
+// GetPeerGroup 返回服务器的 PeerGroup
+func (s *Server) GetPeerGroup() *peer.PeerGroup {
+	return &s.peerGroup
+}
+
 func NewServer(cipher tunnel.Cipher, authkey, keyfile, certfile string) Server {
 	return Server{
 		peerGroup: peer.NewPeerGroup(cipher),

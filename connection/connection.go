@@ -28,8 +28,12 @@ type CloseRead interface {
 type Connection interface {
 	HalfOpenConn
 	GetConnectionID() uint32
-	getOrderedRecvQueue() chan block.Block
-	getRecvQueue() chan block.Block
+	GetOrderedRecvQueue() chan block.Block
+	GetRecvQueue() chan block.Block
+	GetSentBytes() uint64
+	GetRecvBytes() uint64
+	GetLastActiveStr() string
+	GetLatencyNano() int64
 
 	RecvBlock(block.Block)
 
@@ -50,6 +54,8 @@ type baseConnection struct {
 	logger           *logger.Logger
 	LastActivity     atomic.Int64
 	LatencyNano      atomic.Int64
+	SentBytes        atomic.Uint64 // 发送字节计数
+	RecvBytes        atomic.Uint64 // 接收字节计数
 }
 
 func (bc *baseConnection) SetLastActive() {
@@ -84,12 +90,22 @@ func (bc *baseConnection) GetConnectionID() uint32 {
 	return bc.connectionID
 }
 
-func (bc *baseConnection) getRecvQueue() chan block.Block {
+func (bc *baseConnection) GetRecvQueue() chan block.Block {
 	return bc.recvQueue
 }
 
-func (bc *baseConnection) getOrderedRecvQueue() chan block.Block {
+func (bc *baseConnection) GetOrderedRecvQueue() chan block.Block {
 	return bc.orderedRecvQueue
+}
+
+// GetSentBytes 获取发送字节数
+func (bc *baseConnection) GetSentBytes() uint64 {
+	return bc.SentBytes.Load()
+}
+
+// GetRecvBytes 获取接收字节数
+func (bc *baseConnection) GetRecvBytes() uint64 {
+	return bc.RecvBytes.Load()
 }
 
 func (bc *baseConnection) RecvBlock(blk block.Block) {

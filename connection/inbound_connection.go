@@ -159,11 +159,17 @@ func (c *InboundConnection) readBlock(blk *block.Block, readN *int, b []byte) (e
 		if len(dst) < len(blk.BlockData) {
 			// if dst can't put a block, put part of it and return
 			c.dataBuffer.OverWrite(blk.BlockData)
-			*readN += c.dataBuffer.Read(dst)
+			readBytes := c.dataBuffer.Read(dst)
+			*readN += readBytes
+			// 更新接收字节计数
+			c.RecvBytes.Add(uint64(readBytes))
 			return
 		}
 		// if dst can put a block, put it
-		*readN += copy(dst, blk.BlockData)
+		copiedBytes := copy(dst, blk.BlockData)
+		*readN += copiedBytes
+		// 更新接收字节计数
+		c.RecvBytes.Add(uint64(copiedBytes))
 	case block.TypePing:
 		c.logger.Debugf("InboundConnection received TypePing.\n")
 	case block.TypePong:
@@ -180,6 +186,8 @@ func (c *InboundConnection) Write(b []byte) (n int, err error) {
 		return 0, syscall.EINVAL
 	}
 	c.sendData(b)
+	// 更新发送字节计数
+	c.SentBytes.Add(uint64(len(b)))
 	return len(b), nil
 }
 

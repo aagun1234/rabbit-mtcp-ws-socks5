@@ -23,6 +23,16 @@ func (p *Peer) Stop() {
 	p.cancel()
 }
 
+// GetConnectionPool 返回连接池，供外部包访问
+func (p *Peer) GetConnectionPool() *connection_pool.ConnectionPool {
+	return &p.connectionPool
+}
+
+// GetTunnelPool 返回隧道池，供外部包访问
+func (p *Peer) GetTunnelPool() *tunnel_pool.TunnelPool {
+	return &p.tunnelPool
+}
+
 func initRand() error {
 	seedSize := 8
 	seedBytes := make([]byte, seedSize)

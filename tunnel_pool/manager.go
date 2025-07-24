@@ -179,9 +179,7 @@ func (cm *ClientManager) DecreaseNotify(pool *TunnelPool) {
 			}
 			cm.logger.Debugf("ClientManager DecreaseNotify Set ReadDeadLine unlimit.\n")
 			conn.SetReadDeadline(time.Time{})
-			if PingInterval > 0 {
-				go tun.PingPong()
-			}
+			// 移除这里的 PingPong 调用，让它只在 pool.AddTunnel 中启动
 			pool.AddTunnel(&tun)
 			tunnelToCreate--
 			cm.logger.Infof("Successfully dialed to %s. ", endpoint)
