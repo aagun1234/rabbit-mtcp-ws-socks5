@@ -6,6 +6,10 @@ Load configuration from yaml file. see s.yaml & c.yaml
 
 Modify connection and listening parameters to support connections and listening on multiple IP addresses and ports.
 
+Add socks5 listening on client side
+
+Add status server
+
 Add ping-pong over WebSocket to maintain connection status and measure latency. If possible, consider implementing multi-link load balancing based on latency-weighted round robin in the future.
 
 ![rabbit-websocket](https://github.com/aagun1234/rabbit-mtcp-ws-socks5/blob/main/20250717.png)
