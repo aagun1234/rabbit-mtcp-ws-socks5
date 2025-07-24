@@ -6,6 +6,8 @@ forked from ihciah/rabbit-tcp
 
 增加一个返回运行状态的web服务，json格式
 
+增加客户端的socks5侦听（TCP），由服务端直接代理出网
+
 修改连接和侦听参数，支持多个IP地址多个端口上的连接和侦听
 
 在websocket上增加ping-pong，保持连接状态，测量延时，可能的话以后考虑基于延时加权的多链路负载均衡
