@@ -22,7 +22,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Version = "1.0.9ws" //"No version information"
+var Version = "1.0.10 ws/socks5" //"No version information"
 
 var (
 	DialTimeoutSec    = 6
