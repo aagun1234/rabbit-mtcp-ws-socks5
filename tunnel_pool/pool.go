@@ -110,6 +110,7 @@ func (tp *TunnelPool) GetTunnelConnsInfo() []map[string]interface{} {
 	for _, tunn := range tp.tunnelMapping {
 		tunnInfo := map[string]interface{}{
 			"tunnel_id":     tunn.tunnelID,
+			"peer_id":       tp.peerID,
 			"is_active":     tunn.IsActive,
 			"last_activity": tunn.GetLastActiveStr(),
 			"latency_nano":  tunn.GetLatencyNano(),
@@ -133,8 +134,11 @@ func (tp *TunnelPool) GetTunnelPoolInfo() map[string]interface{} {
 	tp.mutex.Lock()
 	defer tp.mutex.Unlock()
 	tunnelPoolInfo := map[string]interface{}{
-		"RecvQueueLength": len(tp.GetRecvQueue()),
-		"SendQueueLength": len(tp.GetSendQueue()),
+		"peer_id":                 tp.peerID,
+		"recv_queue_length":       len(tp.recvQueue),
+		"send_queue_length":       len(tp.sendQueue),
+		"send_retry_queue_length": len(tp.sendRetryQueue),
+		"tunnel_count":            len(tp.tunnelMapping),
 	}
 	return tunnelPoolInfo
 }
