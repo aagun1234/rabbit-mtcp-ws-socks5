@@ -12,15 +12,15 @@ Add status server
 
 e.g.
 
-http://127.0.0.1:8810/config
+ http://127.0.0.1:8810/config
 
-http://127.0.0.1:8810/status
+ http://127.0.0.1:8810/status
 
-http://127.0.0.1:8810/status/metrics
+ http://127.0.0.1:8810/status/metrics
 
-http://127.0.0.1:8810/status/tunnels
+ http://127.0.0.1:8810/status/tunnels
 
-http://127.0.0.1:8810/status/connections
+ http://127.0.0.1:8810/status/connections
 
 
 Add ping-pong over WebSocket to maintain connection status and measure latency. If possible, consider implementing multi-link load balancing based on latency-weighted round robin in the future.
