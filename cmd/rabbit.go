@@ -360,11 +360,12 @@ func parseFlags() (pass bool, cfg *Config) {
 	tunnel_pool.RecvQueueSize = cfg.RecvQueueSize
 	tunnel_pool.TunnelRecvTimeoutSec = cfg.RecvTimeoutSec
 
-	if cfg.Mode == "c" || cfg.Mode == "client" {
+	switch cfg.Mode {
+	case "c", "client":
 		cfg.mode = ClientMode
-	} else if cfg.Mode == "s" || cfg.Mode == "server" {
+	case "s", "server":
 		cfg.mode = ServerMode
-	} else {
+	default:
 		log.Printf("Unsupported mode %s.\n", cfg.Mode)
 		pass = false
 		return

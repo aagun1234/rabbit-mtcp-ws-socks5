@@ -56,8 +56,9 @@ func NewPassiveTunnel(wsConn *websocket.Conn, ciph tunnel.Cipher) (Tunnel, error
 func newTunnelWithID(wsConn *websocket.Conn, ciph tunnel.Cipher, peerID uint32) Tunnel {
 	tunnelID := rand.Uint32()
 	tun := Tunnel{
-		//Conn:     tunnel.NewEncryptedConn(conn, ciph),
-		Conn:     &WebsocketConnAdapter{Conn: wsConn, writeMu: sync.Mutex{}},
+		//Conn: tunnel.NewEncryptedConn(Conn, ciph),
+		Conn: tunnel.NewEncryptedWebsocketConn(wsConn, ciph),
+		//Conn:     &WebsocketConnAdapter{Conn: wsConn, writeMu: sync.Mutex{}},
 		peerID:   peerID,
 		tunnelID: tunnelID,
 		logger:   logger.NewLogger(fmt.Sprintf("[Tunnel-%d]", tunnelID)),
@@ -286,7 +287,8 @@ func (tunnel *Tunnel) InboundRelay(output chan<- block.Block) {
 					stats.ServerStats.AddRecvBytes(receivedBytes)
 				}
 
-				if blk.Type == block.TypePing {
+				switch blk.Type {
+				case block.TypePing:
 					clatency := int64(binary.LittleEndian.Uint64(blk.BlockData))
 					tunnel.SetLatencyNano(clatency)
 					tunnel.logger.Infof("Ping-Pong client latency: %d us\n", clatency/1000)
@@ -295,13 +297,12 @@ func (tunnel *Tunnel) InboundRelay(output chan<- block.Block) {
 					tunnel.logger.Debugf("Sending Pong to websocket, with payload timestamp: %s", time.Unix(0, blk.TimeStamp).Format("2006-01-02 15:04:05.999999"))
 					tunnel.packThenSend(pongblk, nil)
 
-				} else if blk.Type == block.TypePong {
+				case block.TypePong:
 					tunnel.logger.Debugf("InboundRelay received TypePong.\n")
 					timestamp := int64(binary.LittleEndian.Uint64(blk.BlockData))
 					tunnel.SetLatencyNanoSince(timestamp)
 					tunnel.logger.Infof("Ping-Pong Latency: %d us", tunnel.GetLatencyNano()/1000)
-				} else {
-
+				default:
 					output <- *blk
 				}
 

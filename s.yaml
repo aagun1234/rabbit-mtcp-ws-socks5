@@ -10,8 +10,8 @@ rabbit-addr:
 #服务端侦听地址，ws://或者wss://，没有的话默认ws://
 authkey: aaddcc
 #websocket的HTTP认证串
-tls-certfile: ./server.crt
-tls-keyfile: ./server.key
+#tls-certfile: ./server.crt
+#tls-keyfile: ./server.key
 #服务端的TLS KEY和CERT文件路径
 use-syslog: true
 #是否记录到syslog（linux）

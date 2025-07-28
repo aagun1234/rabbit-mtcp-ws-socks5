@@ -78,13 +78,13 @@ func (tp *TunnelPool) RemoveTunnel(tunnel *Tunnel) {
 	tp.logger.Debugf("Tunnel %d to peer %d removed from pool.\n", tunnel.tunnelID, tunnel.peerID)
 	tp.mutex.Lock()
 	defer tp.mutex.Unlock()
-	if tunnel, ok := tp.tunnelMapping[tunnel.tunnelID]; ok {
-		delete(tp.tunnelMapping, tunnel.tunnelID)
+	if tunnel1, ok := tp.tunnelMapping[tunnel.tunnelID]; ok {
+		delete(tp.tunnelMapping, tunnel1.tunnelID)
 		tp.manager.Notify(tp)
 		go tp.manager.DecreaseNotify(tp)
 
 		// 更新连接计数
-		if tunnel.IsClientMode {
+		if tunnel1.IsClientMode {
 			stats.ClientStats.DecrementTunnelCount()
 		} else {
 			stats.ServerStats.DecrementTunnelCount()

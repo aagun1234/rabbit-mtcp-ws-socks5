@@ -4,7 +4,7 @@ verbose: 5
 #0~6
 appname: rabbit-client
 #记录到syslog中的标识
-listen: socks5://127.0.0.1:8080
+listen: socks5://127.0.0.1:18083
 #listen: 127.0.0.1:27791
 #不带socks5://的就是普通TCP侦听通过服务端转发到dest
 #带socks5://就直接通过服务端代理出网
@@ -29,7 +29,7 @@ password: 1234
 #服务端客户端相同
 aead-cipher: CHACHA20-IETF-POLY1305
 #默认CHACHA20-IETF-POLY1305，可选AES-128-GCM,AES-192-GCM,AES-256-GCM
-status-server: 127.0.0.1:8891
+status-server: 127.0.0.1:8892
 #状态服务侦听地址，可以是username:password@0.0.0.0:8888 这样的形式
 #http://127.0.0.1:8891/config  返回配置信息，
 #http://127.0.0.1:8891/status  返回连接状态信息，
