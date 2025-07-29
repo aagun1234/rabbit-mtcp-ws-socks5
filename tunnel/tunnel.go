@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -278,18 +279,19 @@ func NewEncryptedConn(c net.Conn, ciph Cipher) net.Conn {
 }
 
 // NewEncryptedWebsocketConn wraps a stream-oriented net.Conn with cipher.
-func NewEncryptedWebsocketConn(c *websocket.Conn, ciph Cipher) net.Conn {
+func NewEncryptedWebsocketConn(Conn *websocket.Conn, ciph Cipher, writeMu sync.Mutex) net.Conn {
 	if ciph == nil {
-		return &WebsocketConnAdapter{Conn: c}
+		return &WebsocketConnAdapter{Conn: Conn, writeMu: writeMu}
 	}
-	return &streamConn{Conn: &WebsocketConnAdapter{Conn: c}, Cipher: ciph}
+	return &streamConn{Conn: &WebsocketConnAdapter{Conn: Conn, writeMu: writeMu}, Cipher: ciph}
 }
 
 //============================================
 
 type WebsocketConnAdapter struct {
 	*websocket.Conn
-	reader io.Reader
+	reader  io.Reader
+	writeMu sync.Mutex // 添加互斥锁，保护并发写入
 }
 
 func (c *WebsocketConnAdapter) Read(b []byte) (int, error) {
@@ -311,6 +313,9 @@ func (c *WebsocketConnAdapter) Read(b []byte) (int, error) {
 }
 
 func (c *WebsocketConnAdapter) Write(b []byte) (int, error) {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
 	err := c.Conn.WriteMessage(websocket.BinaryMessage, b)
 	if err != nil {
 		return 0, err
@@ -333,4 +338,8 @@ func (c *WebsocketConnAdapter) SetReadDeadline(t time.Time) error {
 
 func (c *WebsocketConnAdapter) SetWriteDeadline(t time.Time) error {
 	return c.Conn.SetWriteDeadline(t)
+}
+
+func (c *WebsocketConnAdapter) Close() error {
+	return c.Conn.Close()
 }

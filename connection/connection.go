@@ -1,13 +1,11 @@
 package connection
 
 import (
-	"io"
 	"net"
 	"time"
 
 	"github.com/aagun1234/rabbit-mtcp-ws-socks5/block"
 	"github.com/aagun1234/rabbit-mtcp-ws-socks5/logger"
-	"github.com/gorilla/websocket"
 	"go.uber.org/atomic"
 )
 
@@ -133,53 +131,4 @@ func (bc *baseConnection) sendData(data []byte) {
 	for _, blk := range blocks {
 		bc.sendQueue <- blk
 	}
-}
-
-// ================================================
-type WebsocketConnAdapter struct {
-	*websocket.Conn
-	reader io.Reader
-}
-
-func (c *WebsocketConnAdapter) Read(b []byte) (int, error) {
-	// WebSocket消息可能是分帧的，需要处理消息边界
-	if c.reader == nil {
-		_, r, err := c.Conn.NextReader()
-		if err != nil {
-			return 0, err
-		}
-		c.reader = r
-	}
-
-	n, err := c.reader.Read(b)
-	if err == io.EOF {
-		c.reader = nil
-		return n, nil
-	}
-	return n, err
-}
-
-func (c *WebsocketConnAdapter) Write(b []byte) (int, error) {
-	err := c.Conn.WriteMessage(websocket.BinaryMessage, b)
-	if err != nil {
-		return 0, err
-	}
-	return len(b), nil
-}
-
-// 确保实现所有net.Conn接口方法
-func (c *WebsocketConnAdapter) SetDeadline(t time.Time) error {
-	err := c.SetReadDeadline(t)
-	if err != nil {
-		return err
-	}
-	return c.SetWriteDeadline(t)
-}
-
-func (c *WebsocketConnAdapter) SetReadDeadline(t time.Time) error {
-	return c.Conn.SetReadDeadline(t)
-}
-
-func (c *WebsocketConnAdapter) SetWriteDeadline(t time.Time) error {
-	return c.Conn.SetWriteDeadline(t)
 }
