@@ -55,10 +55,13 @@ func NewPassiveTunnel(wsConn *websocket.Conn, ciph tunnel.Cipher) (Tunnel, error
 // func newTunnelWithID(conn net.Conn, ciph tunnel.Cipher, peerID uint32) Tunnel {
 func newTunnelWithID(wsConn *websocket.Conn, ciph tunnel.Cipher, peerID uint32) Tunnel {
 	tunnelID := rand.Uint32()
+	ctx, cancel := context.WithCancel(context.Background())
 	tun := Tunnel{
+		ctx:    ctx,
+		cancel: cancel,
 		//Conn: tunnel.NewEncryptedConn(Conn, ciph),
-		Conn: tunnel.NewEncryptedWebsocketConn(wsConn, ciph),
-		//Conn:     &WebsocketConnAdapter{Conn: wsConn, writeMu: sync.Mutex{}},
+		//Conn: tunnel.NewEncryptedWebsocketConn(wsConn, ciph),
+		Conn:     &WebsocketConnAdapter{Conn: wsConn, writeMu: sync.Mutex{}},
 		peerID:   peerID,
 		tunnelID: tunnelID,
 		logger:   logger.NewLogger(fmt.Sprintf("[Tunnel-%d]", tunnelID)),
@@ -178,17 +181,9 @@ func (tunnel *Tunnel) OutboundRelay(normalQueue, retryQueue chan block.Block) {
 			return
 		case blk := <-retryQueue:
 			tunnel.packThenSend(blk, retryQueue)
-		default:
-		}
-		// normalQueue is of secondary highest priority
-		select {
-		case <-tunnel.ctx.Done():
-			tunnel.logger.InfoAf("Outbound relay(normal) ended. (PeerID: %d)", tunnel.peerID)
-			return
-		case blk := <-retryQueue:
-			tunnel.packThenSend(blk, retryQueue)
 		case blk := <-normalQueue:
 			tunnel.packThenSend(blk, retryQueue)
+		default:
 		}
 	}
 }
@@ -238,30 +233,26 @@ func (tunnel *Tunnel) InboundRelay(output chan<- block.Block) {
 	for {
 		select {
 		case <-tunnel.ctx.Done():
-			// Should read all before leave, or packet will be lost
-			for {
-				// Will never be blocked because the tunnel is closed
-				blk, err := block.NewBlockFromReader(tunnel.Conn)
-				if err == nil {
-					tunnel.logger.Debugf("Block received from tunnel(type: %d) successfully after close.\n", blk.Type)
+			// Attempt to read any remaining data once, then exit.
+			blk, err := block.NewBlockFromReader(tunnel.Conn)
+			if err == nil {
+				tunnel.logger.Debugf("Block received from tunnel(type: %d) successfully after close.\n", blk.Type)
 
-					// 更新接收字节统计
-					receivedBytes := uint64(len(blk.Pack()))
-					tunnel.RecvBytes += receivedBytes
+				// 更新接收字节统计
+				receivedBytes := uint64(len(blk.Pack()))
+				tunnel.RecvBytes += receivedBytes
 
-					// 根据模式更新全局统计
-					if tunnel.IsClientMode {
-						stats.ClientStats.AddRecvBytes(receivedBytes)
-					} else {
-						stats.ServerStats.AddRecvBytes(receivedBytes)
-					}
-
-					output <- *blk
-
+				// 根据模式更新全局统计
+				if tunnel.IsClientMode {
+					stats.ClientStats.AddRecvBytes(receivedBytes)
 				} else {
-					tunnel.logger.Debugf("Error when receiving block from tunnel after close: %v.\n", err)
-					break
+					stats.ServerStats.AddRecvBytes(receivedBytes)
 				}
+
+				output <- *blk
+
+			} else {
+				tunnel.logger.Debugf("Error when receiving block from tunnel after close: %v.\n", err)
 			}
 			tunnel.logger.InfoAf("Inbound relay ended. (PeerID: %d)", tunnel.peerID)
 			return
@@ -406,4 +397,8 @@ func (c *WebsocketConnAdapter) SetReadDeadline(t time.Time) error {
 
 func (c *WebsocketConnAdapter) SetWriteDeadline(t time.Time) error {
 	return c.Conn.SetWriteDeadline(t)
+}
+
+func (c *WebsocketConnAdapter) Close() error {
+	return c.Conn.Close()
 }

@@ -37,6 +37,10 @@ func (s *Server) GetPeerGroup() *peer.PeerGroup {
 	return &s.peerGroup
 }
 
+func (s *Server) Cancel() {
+	s.peerGroup.Stop()
+}
+
 func NewServer(cipher tunnel.Cipher, authkey, keyfile, certfile string) Server {
 	return Server{
 		peerGroup: peer.NewPeerGroup(cipher),

@@ -8,7 +8,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/aagun1234/rabbit-mtcp-ws-socks5/client"
@@ -976,10 +978,41 @@ func main() {
 		// 检查listen参数是否以socks5://开头
 		if strings.HasPrefix(mcfg.Listen, "socks5://") {
 			mainlogger.Infof("Starting SOCKS5 proxy with address: %s\n", mcfg.Listen)
-			c.ServeForwardSocks5(mcfg.Listen)
-		} else {
-			mainlogger.Infof("Starting TCP forward from %s to %s\n", mcfg.Listen, mcfg.Dest)
-			c.ServeForward(mcfg.Listen, mcfg.Dest)
+			go func() {
+				if strings.HasPrefix(mcfg.Listen, "socks5://") {
+					mainlogger.Infof("Starting SOCKS5 proxy with address: %s\n", mcfg.Listen)
+					c.ServeForwardSocks5(mcfg.Listen)
+				} else {
+					mainlogger.Infof("Starting TCP forward from %s to %s\n", mcfg.Listen, mcfg.Dest)
+					c.ServeForward(mcfg.Listen, mcfg.Dest)
+				}
+			}()
+			// Wait for interrupt signal to gracefully shut down the server
+			quit := make(chan os.Signal, 1)
+			signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+			<-quit
+			mainlogger.Infoln("Shutting down client...")
+			c.Cancel()
+			mainlogger.Infoln("Client shut down.")
+		} else if mcfg.mode == ServerMode {
+			s := server.NewServer(cipher, mcfg.AuthKey, mcfg.TLSKeyFile, mcfg.TLSCertFile)
+			ServerPeerGroup = s.GetPeerGroup()
+
+			if mcfg.StatusServer != "" {
+				go statusServer2(mcfg.StatusServer, mcfg.StatusACL, mcfg, &s)
+				mainlogger.Infof("Starting status server with address: %s\n", mcfg.StatusServer)
+			}
+
+			go func() {
+				s.Serve(mcfg.RabbitAddr)
+			}()
+			// Wait for interrupt signal to gracefully shut down the server
+			quit := make(chan os.Signal, 1)
+			signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+			<-quit
+			mainlogger.Infoln("Shutting down server...")
+			s.Cancel()
+			mainlogger.Infoln("Server shut down.")
 		}
 	} else {
 

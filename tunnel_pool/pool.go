@@ -57,7 +57,7 @@ func (tp *TunnelPool) AddTunnel(tunnel *Tunnel) {
 		stats.ServerStats.IncrementTunnelCount()
 	}
 
-	tunnel.ctx, tunnel.cancel = context.WithCancel(tp.ctx)
+
 	go func() {
 		<-tunnel.ctx.Done()
 		tp.RemoveTunnel(tunnel)

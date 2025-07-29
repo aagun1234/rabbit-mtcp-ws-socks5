@@ -23,6 +23,10 @@ type PeerGroup struct {
 	logger      *logger.Logger
 }
 
+func (sp *ServerPeer) Stop() {
+	sp.Peer.Stop()
+}
+
 func NewPeerGroup(cipher tunnel.Cipher) PeerGroup {
 	if initRand() != nil {
 		panic("Error when initialize random seed.")
@@ -106,6 +110,16 @@ func (pg *PeerGroup) GetAllTunnelPools() []*tunnel_pool.TunnelPool {
 	}
 
 	return pools
+}
+
+func (pg *PeerGroup) Stop() {
+	pg.lock.Lock()
+	defer pg.lock.Unlock()
+
+	for peerID, peer := range pg.peerMapping {
+		pg.logger.InfoAf("Stopping Server Peer %d.\n", peerID)
+		peer.Stop()
+	}
 }
 
 // ===================================
