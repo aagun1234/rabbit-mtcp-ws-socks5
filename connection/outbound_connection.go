@@ -76,16 +76,24 @@ func (oc *OutboundConnection) RecvRelay() {
 		select {
 		case <-oc.ctx.Done():
 			// Should read all before leave, or packet will be lost
+
+		readLoop:
 			for {
-				n, err := oc.HalfOpenConn.Read(recvBuffer)
-				if err == nil {
-					oc.logger.Debugln("Data received from outbound connection successfully after close.")
-					oc.sendData(recvBuffer[:n])
-					// 更新接收字节计数
-					oc.RecvBytes.Add(uint64(n))
-				} else {
-					oc.logger.Debugf("Error when receiving data from outbound connection after close: %v.\n", err)
-					break
+				select {
+				case <-time.After(100 * time.Millisecond): // 设置一个合理的超时时间
+					n, err := oc.HalfOpenConn.Read(recvBuffer)
+					if err == nil {
+						oc.logger.Debugln("Data received from outbound connection successfully after close.")
+						oc.sendData(recvBuffer[:n])
+						// 更新接收字节计数
+						oc.RecvBytes.Add(uint64(n))
+					} else {
+						oc.logger.Debugf("Error when receiving data from outbound connection after close: %v.\n", err)
+						break readLoop
+					}
+				case <-time.After(5 * time.Second): // 设置一个最大等待时间
+					oc.logger.Warnln("Forced exit from read loop after timeout")
+					break readLoop
 				}
 			}
 			return
@@ -123,13 +131,14 @@ func (oc *OutboundConnection) SendRelay() {
 					oc.closeThenCancelWithOnceSend()
 				}
 			case block.TypeDisconnect:
-				if blk.BlockData[0] == block.ShutdownRead {
+				switch blk.BlockData[0] {
+				case block.ShutdownRead:
 					oc.logger.Debugf("CloseRead for remote connection\n")
 					oc.HalfOpenConn.CloseRead()
-				} else if blk.BlockData[0] == block.ShutdownWrite {
+				case block.ShutdownWrite:
 					oc.logger.Debugf("CloseWrite for remote connection\n")
 					oc.HalfOpenConn.CloseWrite()
-				} else {
+				default:
 					oc.logger.Debugln("Send out DISCONNECT action.")
 					oc.closeThenCancel()
 				}

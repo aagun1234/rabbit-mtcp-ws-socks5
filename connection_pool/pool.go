@@ -85,8 +85,9 @@ func (cp *ConnectionPool) removeConnection(conn connection.Connection) {
 	cp.mappingLock.Lock()
 	defer cp.mappingLock.Unlock()
 	if _, ok := cp.connectionMapping[conn.GetConnectionID()]; ok {
-		delete(cp.connectionMapping, conn.GetConnectionID())
+		//conn.Close()
 
+		delete(cp.connectionMapping, conn.GetConnectionID())
 		stats.ClientStats.DecrementConnectionCount()
 		stats.ServerStats.DecrementConnectionCount()
 

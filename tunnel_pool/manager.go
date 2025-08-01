@@ -117,7 +117,8 @@ func (cm *ClientManager) DecreaseNotify(pool *TunnelPool) {
 			dialTimeout := time.Duration(DialTimeoutSec) * time.Second
 			//conn, err := net.DialTimeout("tcp", endpoint, dialTimeout)
 			dialer := &websocket.Dialer{
-				HandshakeTimeout: dialTimeout,
+				HandshakeTimeout:  dialTimeout,
+				EnableCompression: false, // 禁用 per-message-deflate 压缩
 			}
 			if !strings.Contains(endpoint, "wss://") && !strings.Contains(endpoint, "ws://") {
 				endpoint = "ws://" + endpoint
@@ -166,6 +167,8 @@ func (cm *ClientManager) DecreaseNotify(pool *TunnelPool) {
 				lastfailed = endpoint
 				continue
 
+			} else {
+				cm.logger.Debugf("Websocket connected to %v", endpoint)
 			}
 			if lastfailed == endpoint { //last failed successed, reset
 				lastfailed = ""
@@ -177,7 +180,7 @@ func (cm *ClientManager) DecreaseNotify(pool *TunnelPool) {
 				time.Sleep(time.Duration(ErrorWaitSec) * time.Second)
 				continue
 			}
-			cm.logger.Debugf("ClientManager DecreaseNotify Set ReadDeadLine unlimit.\n")
+			cm.logger.Debugf("Add tunnel %d to pool.\n", tun.tunnelID)
 			conn.SetReadDeadline(time.Time{})
 			// 移除这里的 PingPong 调用，让它只在 pool.AddTunnel 中启动
 			pool.AddTunnel(&tun)
@@ -209,6 +212,11 @@ func (sm *ServerManager) Notify(pool *TunnelPool) {
 	tunnelCount := len(pool.tunnelMapping)
 
 	if tunnelCount == 0 && sm.triggered.CAS(false, true) {
+		// 先取消之前的协程（如果存在）
+		if sm.cancelCountDownFunc != nil {
+			sm.cancelCountDownFunc()
+		}
+
 		var destroyAfterCtx context.Context
 		destroyAfterCtx, sm.cancelCountDownFunc = context.WithCancel(context.Background())
 		go func(*ServerManager) {
@@ -223,7 +231,9 @@ func (sm *ServerManager) Notify(pool *TunnelPool) {
 	}
 
 	if tunnelCount != 0 && sm.triggered.CAS(true, false) {
-		sm.cancelCountDownFunc()
+		if sm.cancelCountDownFunc != nil {
+			sm.cancelCountDownFunc()
+		}
 	}
 }
 

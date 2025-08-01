@@ -48,12 +48,12 @@ func (x *blockProcessor) OrderedRelay(connection Connection) {
 				connection.GetOrderedRecvQueue() <- blk
 				x.recvBlockID++
 				for {
-					blk, ok := x.cache[x.recvBlockID]
+					blk1, ok := x.cache[x.recvBlockID]
 					if !ok {
 						break
 					}
-					x.logger.Debugf("Send Block %d from cache\n", blk.BlockID)
-					connection.GetOrderedRecvQueue() <- blk
+					x.logger.Debugf("Send Block %d from cache\n", blk1.BlockID)
+					connection.GetOrderedRecvQueue() <- blk1
 					delete(x.cache, x.recvBlockID)
 					x.recvBlockID++
 				}

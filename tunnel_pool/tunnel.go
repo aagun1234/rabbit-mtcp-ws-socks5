@@ -60,7 +60,7 @@ func newTunnelWithID(wsConn *websocket.Conn, ciph tunnel.Cipher, peerID uint32) 
 		ctx:    ctx,
 		cancel: cancel,
 		//Conn: tunnel.NewEncryptedConn(Conn, ciph),
-		Conn: tunnel.NewEncryptedWebsocketConn(wsConn, ciph, sync.Mutex{}),
+		Conn: tunnel.NewEncryptedWebsocketConn(wsConn, ciph, &sync.Mutex{}),
 		//Conn:     &WebsocketConnAdapter{Conn: wsConn, writeMu: sync.Mutex{}},
 		peerID:   peerID,
 		tunnelID: tunnelID,
@@ -212,7 +212,11 @@ func (tunnel *Tunnel) packThenSend(blk block.Block, retryQueue chan block.Block)
 		// Tunnel down and message has not been fully sent.
 		tunnel.closeThenCancel()
 		go func() {
-			retryQueue <- blk
+			select {
+			case retryQueue <- blk:
+			case <-tunnel.ctx.Done():
+				tunnel.logger.Debugf("Tunnel context done, not retrying block.")
+			}
 		}()
 		// Use new goroutine to avoid channel blocked
 	} else {

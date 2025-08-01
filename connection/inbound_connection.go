@@ -144,13 +144,14 @@ func (c *InboundConnection) readBlock(blk *block.Block, readN *int, b []byte) (e
 	switch blk.Type {
 	case block.TypeDisconnect:
 		// TODO: decide shutdown type
-		if blk.BlockData[0] == block.ShutdownBoth {
+		switch blk.BlockData[0] {
+		case block.ShutdownBoth:
 			c.closed.Store(true)
 			return io.EOF
-		} else if blk.BlockData[0] == block.ShutdownWrite {
+		case block.ShutdownWrite:
 			c.readClosed.Store(true)
 			return io.EOF
-		} else if blk.BlockData[0] == block.ShutdownRead {
+		case block.ShutdownRead:
 			c.writeClosed.Store(true)
 			return nil
 		}
@@ -194,6 +195,8 @@ func (c *InboundConnection) Write(b []byte) (n int, err error) {
 func (c *InboundConnection) Close() error {
 	if c.closed.CAS(false, true) {
 		c.SendDisconnect(block.ShutdownBoth)
+		close(c.recvQueue)        // 新增通道关闭
+		close(c.orderedRecvQueue) // 新增通道关闭
 	}
 	c.Stop()
 	return nil

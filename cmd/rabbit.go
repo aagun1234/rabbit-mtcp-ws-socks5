@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	_ "net/http/pprof" // 自动注册 /debug/pprof 路由
 	"os"
 	"os/signal"
 	"strings"
@@ -65,6 +67,7 @@ type Config struct {
 	Insecure        bool   `yaml:"insecure"`     // 客户端是否跳过服务端证书验证InsecureSkipVerify
 	UseSyslog       bool   `yaml:"use-syslog"`   // 客户端是否跳过服务端证书验证InsecureSkipVerify
 	RetryFailedAddr bool   `yaml:"retry-failed"` // 对于客户端连接失败的rabbit-addr，是否反复重试，如果否，则不会重试连接，直到所有的都连不上
+	MemProf         string `yaml:"mem-prof"`     // 内存分析侦听端口
 
 	StatusServer string `yaml:"status-server"` // 状态服务侦听的本地TCP地址 (例如: "127.0.0.1:8010")
 	StatusACL    string `yaml:"status-acl"`    // 状态服务ACL
@@ -102,6 +105,7 @@ func NewDefaultConfig() *Config {
 		Insecure:                true,
 		UseSyslog:               true,
 		RetryFailedAddr:         true,
+		MemProf:                 "",
 		PingIntervalSec:         30,
 		DialTimeoutSec:          6,
 		RecvTimeoutSec:          20,
@@ -143,6 +147,7 @@ func LoadConfig() (*Config, error) {
 		insecureArg                bool
 		useSyslogArg               bool
 		retryFailedAddrArg         bool
+		memProfArg                 string
 		statusServerArg            string
 		statusACLArg               string
 		pingIntervalSecArg         int
@@ -179,6 +184,7 @@ func LoadConfig() (*Config, error) {
 	fs.BoolVar(&insecureArg, "insecure", false, "InsecureSkipVerify")
 	fs.BoolVar(&useSyslogArg, "use-syslog", false, "Write to systemlog")
 	fs.BoolVar(&retryFailedAddrArg, "retry-failed", false, "[Client Only] retry failed rabbit-addr")
+	fs.StringVar(&memProfArg, "mem-prof", "", "Memory profile listen address")
 	fs.StringVar(&statusServerArg, "status-server", "", "Sataus server listen address")
 	fs.StringVar(&statusACLArg, "status-acl", "", "Status server ACL")
 	fs.IntVar(&pingIntervalSecArg, "ping-interval", 0, "Ping-pong interval, default 30(seconds)")
@@ -282,6 +288,9 @@ func LoadConfig() (*Config, error) {
 	}
 	if flagsSeen["insecure"] {
 		cfg.Insecure = insecureArg
+	}
+	if flagsSeen["mem-prof"] {
+		cfg.MemProf = memProfArg
 	}
 	if flagsSeen["retry-failed"] {
 		cfg.RetryFailedAddr = retryFailedAddrArg
@@ -949,6 +958,7 @@ func checkBasicAuth(r *http.Request, username, password string) bool {
 }
 
 func main() {
+
 	pass, mcfg := parseFlags()
 	if !pass {
 		return
@@ -958,11 +968,21 @@ func main() {
 	logger.UseSyslog = mcfg.UseSyslog
 	mainlogger := logger.NewLogger("[Main]")
 
+	// 添加内存分析
+	if mcfg.MemProf != "" {
+		//f, _ := os.Create("/" + mcfg.AppName + "_mem.prof")
+		//defer pprof.WriteHeapProfile(f)
+		go func() {
+			mainlogger.Infof("%v", http.ListenAndServe(mcfg.MemProf, nil))
+		}()
+	}
+
 	mainlogger.Debugf("mode: %v, password: %v, addr: %v, listen: %v, dest: %v, authkey: %v, keyfile: %v, crtfile: %v, tunnelN: %v, verbose: %v\n", mcfg.Mode, mcfg.Password, mcfg.RabbitAddr, mcfg.Listen, mcfg.Dest, mcfg.AuthKey, mcfg.TLSKeyFile, mcfg.TLSCertFile, mcfg.TunnelN, mcfg.Verbose)
 	cipher, _ := tunnel.NewAEADCipher(mcfg.AEADCipher, nil, mcfg.Password)
 
 	// 初始化统计模块，使用20秒的历史窗口
-	stats.InitStats(20)
+	statsCtx, statsCancel := context.WithCancel(context.Background())
+	stats.InitStats(statsCtx, 20)
 	prom_init()
 	if mcfg.mode == ClientMode {
 		c := client.NewClient(mcfg.TunnelN, mcfg.RabbitAddr, cipher, mcfg.AuthKey, mcfg.Insecure, mcfg.RetryFailedAddr)
@@ -994,6 +1014,8 @@ func main() {
 			mainlogger.Infoln("Shutting down client...")
 			c.Cancel()
 			mainlogger.Infoln("Client shut down.")
+			statsCancel()
+			logger.CloseSyslog() // 添加syslog关闭
 		} else if mcfg.mode == ServerMode {
 			s := server.NewServer(cipher, mcfg.AuthKey, mcfg.TLSKeyFile, mcfg.TLSCertFile)
 			ServerPeerGroup = s.GetPeerGroup()
@@ -1013,6 +1035,8 @@ func main() {
 			mainlogger.Infoln("Shutting down server...")
 			s.Cancel()
 			mainlogger.Infoln("Server shut down.")
+			statsCancel()
+			logger.CloseSyslog() // 添加syslog关闭
 		}
 	} else {
 

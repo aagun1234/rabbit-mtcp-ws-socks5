@@ -57,7 +57,6 @@ func (tp *TunnelPool) AddTunnel(tunnel *Tunnel) {
 		stats.ServerStats.IncrementTunnelCount()
 	}
 
-
 	go func() {
 		<-tunnel.ctx.Done()
 		tp.RemoveTunnel(tunnel)
@@ -79,6 +78,7 @@ func (tp *TunnelPool) RemoveTunnel(tunnel *Tunnel) {
 	tp.mutex.Lock()
 	defer tp.mutex.Unlock()
 	if tunnel1, ok := tp.tunnelMapping[tunnel.tunnelID]; ok {
+		//tunnel1.Close() // 确保隧道关闭
 		delete(tp.tunnelMapping, tunnel1.tunnelID)
 		tp.manager.Notify(tp)
 		go tp.manager.DecreaseNotify(tp)

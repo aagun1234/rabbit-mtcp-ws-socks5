@@ -279,11 +279,15 @@ func NewEncryptedConn(c net.Conn, ciph Cipher) net.Conn {
 }
 
 // NewEncryptedWebsocketConn wraps a stream-oriented net.Conn with cipher.
-func NewEncryptedWebsocketConn(Conn *websocket.Conn, ciph Cipher, writeMu sync.Mutex) net.Conn {
+func NewEncryptedWebsocketConn(Conn *websocket.Conn, ciph Cipher, writeMu *sync.Mutex) net.Conn {
 	if ciph == nil {
-		return &WebsocketConnAdapter{Conn: Conn, writeMu: writeMu}
+		adapter := &WebsocketConnAdapter{Conn: Conn}
+		adapter.writeMu = *writeMu
+		return adapter
 	}
-	return &streamConn{Conn: &WebsocketConnAdapter{Conn: Conn, writeMu: writeMu}, Cipher: ciph}
+	adapter := &WebsocketConnAdapter{Conn: Conn}
+	adapter.writeMu = *writeMu
+	return &streamConn{Conn: adapter, Cipher: ciph}
 }
 
 //============================================
