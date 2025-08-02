@@ -179,11 +179,31 @@ func (tunnel *Tunnel) OutboundRelay(normalQueue, retryQueue chan block.Block) {
 		case <-tunnel.ctx.Done():
 			tunnel.logger.InfoAf("Outbound relay(retry) ended. (PeerID: %d)", tunnel.peerID)
 			return
-		case blk := <-retryQueue:
-			tunnel.packThenSend(blk, retryQueue)
-		case blk := <-normalQueue:
+		case blk, ok := <-retryQueue:
+			if !ok {
+				tunnel.logger.InfoAf("Outbound relay(retry queue closed) ended. (PeerID: %d)", tunnel.peerID)
+				return
+			}
 			tunnel.packThenSend(blk, retryQueue)
 		default:
+		}
+		// normalQueue is of secondary highest priority
+		select {
+		case <-tunnel.ctx.Done():
+			tunnel.logger.InfoAf("Outbound relay(normal) ended. (PeerID: %d)", tunnel.peerID)
+			return
+		case blk, ok := <-retryQueue:
+			if !ok {
+				tunnel.logger.InfoAf("Outbound relay(retry queue closed) ended. (PeerID: %d)", tunnel.peerID)
+				return
+			}
+			tunnel.packThenSend(blk, retryQueue)
+		case blk, ok := <-normalQueue:
+			if !ok {
+				tunnel.logger.InfoAf("Outbound relay(normal queue closed) ended. (PeerID: %d)", tunnel.peerID)
+				return
+			}
+			tunnel.packThenSend(blk, retryQueue)
 		}
 	}
 }
